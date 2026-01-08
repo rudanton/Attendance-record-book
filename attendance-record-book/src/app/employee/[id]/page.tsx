@@ -24,6 +24,14 @@ const parseTimeToTimestamp = (timeStr: string, originalTimestamp: Timestamp | nu
   return Timestamp.fromDate(date);
 };
 
+// Calculate total break minutes for convenience helpers
+const calcBreakMinutes = (breaks: Attendance['breaks'] = []): number => {
+  return breaks.reduce((sum, b) => {
+    if (!b.start || !b.end) return sum;
+    return sum + differenceInMinutes(b.end.toDate(), b.start.toDate());
+  }, 0);
+};
+
 export default function EmployeeDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -145,6 +153,52 @@ export default function EmployeeDetailPage() {
     }
   };
 
+  // Ensure at least the required break minutes by appending a synthetic break ending at check-out.
+  const handleEnsureMinimumBreak = (requiredMinutes: number) => {
+    if (!editingRecordId) return;
+    const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
+    if (!currentRecord) return;
+
+    const checkInTs = (editingFormData.checkIn as Timestamp) || currentRecord.checkIn;
+    const checkOutTs = (editingFormData.checkOut as Timestamp) || currentRecord.checkOut;
+    
+    if (!checkInTs || !checkOutTs) {
+      alert('출근과 퇴근 시간을 먼저 입력하세요.');
+      return;
+    }
+
+    const existingBreaks = (editingFormData.breaks || currentRecord.breaks || []) as Attendance['breaks'];
+    const currentBreakMinutes = calcBreakMinutes(existingBreaks);
+    const missing = requiredMinutes - currentBreakMinutes;
+
+    if (missing <= 0) {
+      alert(`이미 ${requiredMinutes}분 이상의 휴게가 반영되었습니다.`);
+      return;
+    }
+
+    // Append a synthetic break right before checkout, but ensure it stays within work hours
+    const checkOutDate = checkOutTs.toDate();
+    const checkInDate = checkInTs.toDate();
+    let startDate = new Date(checkOutDate.getTime() - missing * 60000);
+
+    // If start date goes before check-in, cap it at check-in time
+    if (startDate < checkInDate) {
+      startDate = checkInDate;
+      const adjustedMinutes = Math.floor((checkOutDate.getTime() - checkInDate.getTime()) / 60000);
+      if (adjustedMinutes <= 0) {
+        alert('출근과 퇴근 시간이 같거나 역순입니다.');
+        return;
+      }
+    }
+
+    const newBreak = { start: Timestamp.fromDate(startDate), end: Timestamp.fromDate(checkOutDate) } as Attendance['breaks'][number];
+
+    setEditingFormData(prev => ({
+      ...prev,
+      breaks: [...existingBreaks, newBreak],
+    }));
+  };
+
   // Generate year options
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i); // Current year +/- 2
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -220,6 +274,21 @@ export default function EmployeeDetailPage() {
                             className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded"
                           >
                             +30분
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEnsureMinimumBreak(60)}
+                            className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs rounded"
+                            title="법정 최소 휴게 60분을 맞추기 위해 퇴근 직전에 부족한 휴게를 채웁니다."
+                          >
+                            휴게 1시간 맞추기
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEdit(record.id)}
+                            className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded"
+                          >
+                            저장
                           </button>
                         </div>
                       ) : (
