@@ -63,8 +63,6 @@ type AggregatedResult = {
   regularWorkMinutes: number;
   nightWorkMinutes: number;
   totalWorkMinutes: number;
-  hourlyRate: number;
-  estimatedSalary: number;
 };
 
 function AdminAttendanceLogsContent() {
@@ -341,17 +339,8 @@ function AdminAttendanceLogsContent() {
       const enrichedResults = new Map<string, AggregatedResult>();
 
       for (const [uid, data] of attendanceResults.entries()) {
-        const employee = employees.find(emp => emp.uid === uid);
-        const hourlyRate = employee ? employee.hourlyRate : 0;
-        
-        const regularPay = (data.regularWorkMinutes / 60) * hourlyRate;
-        const nightPay = (data.nightWorkMinutes / 60) * hourlyRate * 1.5;
-        const estimatedSalary = Math.round(regularPay + nightPay);
-
         enrichedResults.set(uid, {
           ...data,
-          hourlyRate,
-          estimatedSalary
         });
       }
 
@@ -359,7 +348,7 @@ function AdminAttendanceLogsContent() {
     } catch (error) {
       console.error("Failed to aggregate data:", error);
     }
-  }, [selectedBranchId, aggFilters, employees]);
+  }, [selectedBranchId, aggFilters]);
 
   // 정산 필터나 직원 데이터가 변경될 때 자동으로 정산 수행
   useEffect(() => {

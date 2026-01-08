@@ -10,11 +10,6 @@ import { User } from './types';
  * @returns Promise<User> The added user with generated UID and joinedAt timestamp.
  */
 export async function addEmployee(branchId: string, employeeData: Omit<User, 'uid' | 'branchId' | 'isActive' | 'joinedAt'>): Promise<User> {
-  const minWage = parseFloat(process.env.NEXT_PUBLIC_MINIMUM_WAGE || '0');
-  if (employeeData.hourlyRate < minWage) {
-    throw new Error(`시급은 최저시급(${minWage.toLocaleString()}원) 이상이어야 합니다.`);
-  }
-
   try {
     const newUser: Omit<User, 'uid'> = {
       ...employeeData,
@@ -36,10 +31,6 @@ export async function addEmployee(branchId: string, employeeData: Omit<User, 'ui
     return createdUser;
   } catch (error) {
     console.error("Error adding employee: ", error);
-    // Re-throw specific validation error
-    if (error instanceof Error && error.message.includes('시급')) {
-      throw error;
-    }
     throw new Error("Failed to add employee.");
   }
 }
