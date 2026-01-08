@@ -180,19 +180,9 @@ export default function HomePage() {
 
   return (
     <main className="flex min-h-screen flex-col items-center p-12 bg-gray-900 text-white">
-      <h1 className="text-5xl font-bold mb-4">
+      <h1 className="text-5xl font-bold mb-8">
         {selectedBranchName || '선택된 지점'} 출퇴근 대시보드
       </h1>
-      <button
-        onClick={() => {
-          localStorage.removeItem('selectedBranchId');
-          setSelectedBranchId(null);
-          setSelectedBranchName(null);
-        }}
-        className="mb-8 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors duration-300"
-      >
-        지점 변경
-      </button>
       {refreshing && <div className="absolute top-4 right-4 text-white">새로고침 중...</div>}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-full max-w-7xl">
         {employees.length > 0 ? (
@@ -214,13 +204,13 @@ export default function HomePage() {
                   <div className="text-gray-400 mb-4 text-center">오늘의 상태: <span className={status.color}>{status.text}</span></div>
                   <div className="text-sm text-gray-500">
                     {attendanceRecord?.checkIn && (
-                      <div>출근: {new Date(attendanceRecord.checkIn.seconds * 1000).toLocaleTimeString()}</div>
+                      <div>출근: {new Date(attendanceRecord.checkIn.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
                     )}
                     {openBreak && (
-                      <div className="text-cyan-400">휴식 시작: {new Date(openBreak.start.seconds * 1000).toLocaleTimeString()}</div>
+                      <div className="text-cyan-400">휴식 시작: {new Date(openBreak.start.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
                     )}
                     {attendanceRecord?.checkOut && (
-                      <div>퇴근: {new Date(attendanceRecord.checkOut.seconds * 1000).toLocaleTimeString()}</div>
+                      <div>퇴근: {new Date(attendanceRecord.checkOut.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
                     )}
                   </div>
                 </div>

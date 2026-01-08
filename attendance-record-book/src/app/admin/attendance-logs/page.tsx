@@ -9,7 +9,7 @@ import {
   getAggregatedAttendance 
 } from '@/lib/attendanceService';
 import { getAllEmployees } from '@/lib/employeeService';
-import { getAllBranches } from '@/lib/branchService'; // Import branch service
+import { getAllBranches } from '@/lib/branchService';
 import { Attendance, User, Branch } from '@/lib/types';
 import Link from 'next/link';
 import { Timestamp } from 'firebase/firestore';
@@ -31,10 +31,26 @@ const formatTimestampToDatetimeLocal = (timestamp: Timestamp | null): string => 
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 };
 
+// Helper to format Firebase Timestamp to HH:mm string
+const formatTimestampToTime = (timestamp: Timestamp | null): string => {
+  if (!timestamp) return '';
+  const date = timestamp.toDate();
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+};
+
 // Helper to parse datetime-local string to Firebase Timestamp
 const parseDatetimeLocalToTimestamp = (datetimeLocalStr: string): Timestamp | null => {
   if (!datetimeLocalStr) return null;
   return Timestamp.fromDate(new Date(datetimeLocalStr));
+};
+
+// Helper to parse time string (HH:mm) to Firebase Timestamp, keeping the original date
+const parseTimeToTimestamp = (timeStr: string, originalTimestamp: Timestamp | null, recordDate: string): Timestamp | null => {
+  if (!timeStr) return null;
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  const date = originalTimestamp ? originalTimestamp.toDate() : new Date(recordDate);
+  date.setHours(hours, minutes, 0, 0);
+  return Timestamp.fromDate(date);
 };
 
 // Helper to format Date object to yyyy-MM-dd string
@@ -58,7 +74,7 @@ function AdminAttendanceLogsContent() {
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editingFormData, setEditingFormData] = useState<Partial<Attendance>>({});
   const [employees, setEmployees] = useState<User[]>([]);
-  const [newRecordFormData, setNewRecordFormData] = useState({ userId: '', userName: '', date: formatDateToYMD(new Date()), checkIn: '', checkOut: '' });
+  const [newRecordFormData, setNewRecordFormData] = useState({ userId: '', userName: '', date: formatDateToYMD(new Date()), checkInTime: '', checkOutTime: '' });
   
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
@@ -138,6 +154,15 @@ function AdminAttendanceLogsContent() {
       return (a.checkIn?.toMillis() || 0) - (b.checkIn?.toMillis() || 0);
     });
     setFilteredRecords(filtered);
+
+    // 월별 필터 변경 시 정산 필터의 시작일/종료일도 자동 업데이트
+    const startOfMonth = new Date(filters.year, filters.month - 1, 1);
+    const endOfMonth = new Date(filters.year, filters.month, 0);
+    setAggFilters(prev => ({
+      ...prev,
+      startDate: formatDateToYMD(startOfMonth),
+      endDate: formatDateToYMD(endOfMonth)
+    }));
   }, [allRecords, filters]);
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -224,7 +249,48 @@ function AdminAttendanceLogsContent() {
   };
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setEditingFormData(prev => ({ ...prev, [name]: parseDatetimeLocalToTimestamp(value) }));
+    if (!editingRecordId) return;
+    const currentRecord = allRecords.find(r => r.id === editingRecordId);
+    if (!currentRecord) return;
+    
+    const originalTimestamp = name === 'checkIn' ? currentRecord.checkIn : currentRecord.checkOut;
+    const newTimestamp = parseTimeToTimestamp(value, originalTimestamp, currentRecord.date);
+    setEditingFormData(prev => ({ ...prev, [name]: newTimestamp }));
+  };
+
+  const handleAdd30Minutes = () => {
+    if (!editingFormData.checkOut) {
+      // 출근 시간이 있으면 출근 시간 + 30분을 기본값으로 설정
+      if (editingFormData.checkIn) {
+        const newCheckOut = new Date((editingFormData.checkIn as Timestamp).toDate());
+        newCheckOut.setMinutes(newCheckOut.getMinutes() + 30);
+        setEditingFormData(prev => ({ ...prev, checkOut: Timestamp.fromDate(newCheckOut) }));
+      }
+    } else {
+      const currentCheckOut = (editingFormData.checkOut as Timestamp).toDate();
+      currentCheckOut.setMinutes(currentCheckOut.getMinutes() + 30);
+      setEditingFormData(prev => ({ ...prev, checkOut: Timestamp.fromDate(currentCheckOut) }));
+    }
+  };
+
+  const handleAdd30MinutesNewRecord = () => {
+    const { date, checkInTime, checkOutTime } = newRecordFormData;
+    
+    if (!checkOutTime && checkInTime) {
+      // 출근 시간 + 30분
+      const [hours, minutes] = checkInTime.split(':').map(Number);
+      const newDate = new Date();
+      newDate.setHours(hours, minutes + 30, 0, 0);
+      const newCheckOutTime = `${String(newDate.getHours()).padStart(2, '0')}:${String(newDate.getMinutes()).padStart(2, '0')}`;
+      setNewRecordFormData(prev => ({ ...prev, checkOutTime: newCheckOutTime }));
+    } else if (checkOutTime) {
+      // 현재 퇴근 시간 + 30분
+      const [hours, minutes] = checkOutTime.split(':').map(Number);
+      const newDate = new Date();
+      newDate.setHours(hours, minutes + 30, 0, 0);
+      const newCheckOutTime = `${String(newDate.getHours()).padStart(2, '0')}:${String(newDate.getMinutes()).padStart(2, '0')}`;
+      setNewRecordFormData(prev => ({ ...prev, checkOutTime: newCheckOutTime }));
+    }
   };
   const handleNewRecordInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -238,14 +304,18 @@ function AdminAttendanceLogsContent() {
   const handleAddRecord = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBranchId) return; // Add check for selectedBranchId
-    const { userId, userName, date, checkIn, checkOut } = newRecordFormData;
-    if (!userId || !date || !checkIn) {
+    const { userId, userName, date, checkInTime, checkOutTime } = newRecordFormData;
+    if (!userId || !date || !checkInTime) {
       alert('직원, 날짜, 출근 시간은 필수입니다.');
       return;
     }
     try {
-      await addAttendanceRecord(selectedBranchId, { userId, userName, date, checkIn: new Date(checkIn), checkOut: checkOut ? new Date(checkOut) : null });
-      setNewRecordFormData({ userId: '', userName: '', date: formatDateToYMD(new Date()), checkIn: '', checkOut: '' });
+      // Combine date and time to create full datetime
+      const checkInDateTime = new Date(`${date}T${checkInTime}:00`);
+      const checkOutDateTime = checkOutTime ? new Date(`${date}T${checkOutTime}:00`) : null;
+      
+      await addAttendanceRecord(selectedBranchId, { userId, userName, date, checkIn: checkInDateTime, checkOut: checkOutDateTime });
+      setNewRecordFormData({ userId: '', userName: '', date: formatDateToYMD(new Date()), checkInTime: '', checkOutTime: '' });
       await fetchData(); // Refresh list after add
     } catch (error) {
       console.error("Failed to add new record:", error);
@@ -258,19 +328,15 @@ function AdminAttendanceLogsContent() {
     const { name, value } = e.target;
     setAggFilters(prev => ({ ...prev, [name]: value }));
   };
-  const handleAggregate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedBranchId) {
-        alert("지점을 선택해주세요.");
-        return;
-    }
+  
+  // 자동으로 정산 수행
+  const performAggregation = useCallback(async () => {
+    if (!selectedBranchId) return;
     const { userId, startDate, endDate } = aggFilters;
-    if (!startDate || !endDate) {
-      alert('조회할 시작일과 종료일을 모두 선택해주세요.');
-      return;
-    }
+    if (!startDate || !endDate) return;
+    
     try {
-      const attendanceResults = await getAggregatedAttendance(selectedBranchId, userId || null, startDate, endDate); // Pass selectedBranchId
+      const attendanceResults = await getAggregatedAttendance(selectedBranchId, userId || null, startDate, endDate);
       
       const enrichedResults = new Map<string, AggregatedResult>();
 
@@ -292,8 +358,19 @@ function AdminAttendanceLogsContent() {
       setAggregatedResults(enrichedResults);
     } catch (error) {
       console.error("Failed to aggregate data:", error);
-      alert("데이터 정산 중 오류가 발생했습니다.");
     }
+  }, [selectedBranchId, aggFilters, employees]);
+
+  // 정산 필터나 직원 데이터가 변경될 때 자동으로 정산 수행
+  useEffect(() => {
+    if (aggFilters.startDate && aggFilters.endDate && employees.length > 0) {
+      performAggregation();
+    }
+  }, [aggFilters, employees, performAggregation]);
+
+  const handleAggregate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    performAggregation();
   };
 
   const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -399,25 +476,36 @@ function AdminAttendanceLogsContent() {
             <div className="flex flex-col">
                 <label htmlFor="newCheckIn" className="text-sm font-medium text-gray-600 mb-1">출근 시간</label>
                 <input
-                type="datetime-local"
-                name="checkIn"
+                type="time"
+                name="checkInTime"
                 id="newCheckIn"
-                value={newRecordFormData.checkIn}
+                value={newRecordFormData.checkInTime}
                 onChange={handleNewRecordInputChange}
-                className="p-2 border rounded-md"
+                className="p-2 border rounded-md [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
+                placeholder="HH:mm"
                 required
                 />
             </div>
             <div className="flex flex-col">
                 <label htmlFor="newCheckOut" className="text-sm font-medium text-gray-600 mb-1">퇴근 시간 (선택)</label>
-                <input
-                type="datetime-local"
-                name="checkOut"
-                id="newCheckOut"
-                value={newRecordFormData.checkOut}
-                onChange={handleNewRecordInputChange}
-                className="p-2 border rounded-md"
-                />
+                <div className="flex items-center space-x-2">
+                  <input
+                  type="time"
+                  name="checkOutTime"
+                  id="newCheckOut"
+                  value={newRecordFormData.checkOutTime}
+                  onChange={handleNewRecordInputChange}
+                  className="p-2 border rounded-md flex-1 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
+                  placeholder="HH:mm"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAdd30MinutesNewRecord}
+                    className="px-2 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded whitespace-nowrap"
+                  >
+                    +30분
+                  </button>
+                </div>
             </div>
             <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md h-10 self-end">기록 추가</button>
             </form>
@@ -500,27 +588,38 @@ function AdminAttendanceLogsContent() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {editingRecordId === record.id ? (
                             <input
-                            type="datetime-local"
+                            type="time"
                             name="checkIn"
-                            value={formatTimestampToDatetimeLocal(editingFormData.checkIn as Timestamp)}
+                            value={formatTimestampToTime(editingFormData.checkIn as Timestamp)}
                             onChange={handleFormChange}
-                            className="p-1 border rounded-md w-40"
+                            className="p-2 border rounded-md w-32 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
+                            placeholder="HH:mm"
                             />
                         ) : (
-                            record.checkIn ? new Date(record.checkIn.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-'
+                            record.checkIn ? new Date(record.checkIn.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '-'
                         )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {editingRecordId === record.id ? (
-                            <input
-                            type="datetime-local"
-                            name="checkOut"
-                            value={formatTimestampToDatetimeLocal(editingFormData.checkOut as Timestamp)}
-                            onChange={handleFormChange}
-                            className="p-1 border rounded-md w-40"
-                            />
+                            <div className="flex items-center space-x-2">
+                              <input
+                              type="time"
+                              name="checkOut"
+                              value={formatTimestampToTime(editingFormData.checkOut as Timestamp)}
+                              onChange={handleFormChange}
+                              className="p-2 border rounded-md w-32 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
+                              placeholder="HH:mm"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleAdd30Minutes}
+                                className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded"
+                              >
+                                +30분
+                              </button>
+                            </div>
                         ) : (
-                            record.checkOut ? new Date(record.checkOut.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '근무 중'
+                            record.checkOut ? new Date(record.checkOut.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '근무 중'
                         )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -537,7 +636,14 @@ function AdminAttendanceLogsContent() {
                         )}
                         </td>
                     </tr>
-                    ))}
+                    ))
+                ) : (
+                    <tr>
+                        <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                            출퇴근 기록이 없습니다.
+                        </td>
+                    </tr>
+                )}
                 </tbody>
             </table>
             )}
