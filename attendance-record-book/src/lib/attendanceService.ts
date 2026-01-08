@@ -82,14 +82,16 @@ function calculateWorkMinutes(
 
 
 /**
- * Finds the most recent, open (not clocked-out) attendance record for a user.
+ * Finds the most recent, open (not clocked-out) attendance record for a user within a specific branch.
+ * @param branchId The ID of the branch.
  * @param userId The ID of the user.
  * @returns Promise<string | null> The document ID of the open attendance record, or null if none exists.
  */
-async function getOpenAttendanceRecordId(userId: string): Promise<string | null> {
+async function getOpenAttendanceRecordId(branchId: string, userId: string): Promise<string | null> {
   const attendanceCol = collection(db, 'attendance');
   const q = query(
     attendanceCol,
+    where('branchId', '==', branchId), // Filter by branchId
     where('userId', '==', userId),
     where('checkOut', '==', null),
     orderBy('checkIn', 'desc'),
@@ -104,14 +106,15 @@ async function getOpenAttendanceRecordId(userId: string): Promise<string | null>
 }
 
 /**
- * Clocks in a user, creating a new attendance record.
+ * Clocks in a user, creating a new attendance record for a specific branch.
+ * @param branchId The ID of the branch.
  * @param userId The ID of the user clocking in.
  * @param userName The name of the user for denormalization.
  * @returns Promise<void>
  * @throws Will throw an error if the user is already clocked in (has an open session).
  */
-export async function clockIn(userId: string, userName: string): Promise<void> {
-  const openAttendanceId = await getOpenAttendanceRecordId(userId);
+export async function clockIn(branchId: string, userId: string, userName: string): Promise<void> {
+  const openAttendanceId = await getOpenAttendanceRecordId(branchId, userId);
 
   if (openAttendanceId) {
     throw new Error('User is already clocked in. Cannot start a new session.');
@@ -119,6 +122,7 @@ export async function clockIn(userId: string, userName: string): Promise<void> {
 
   const attendanceCol = collection(db, 'attendance');
   await addDoc(attendanceCol, {
+    branchId, // Add branchId here
     userId,
     userName,
     date: getTodayDateString(), // The date the shift *started*
@@ -133,13 +137,14 @@ export async function clockIn(userId: string, userName: string): Promise<void> {
 }
 
 /**
- * Clocks out a user, closing their most recent open session and calculating total work minutes.
+ * Clocks out a user, closing their most recent open session and calculating total work minutes for a specific branch.
+ * @param branchId The ID of the branch.
  * @param userId The ID of the user clocking out.
  * @returns Promise<void>
  * @throws Will throw an error if the user has no open session to clock out from.
  */
-export async function clockOut(userId: string): Promise<void> {
-  const openAttendanceId = await getOpenAttendanceRecordId(userId);
+export async function clockOut(branchId: string, userId: string): Promise<void> {
+  const openAttendanceId = await getOpenAttendanceRecordId(branchId, userId);
 
   if (!openAttendanceId) {
     throw new Error('User is not clocked in. Cannot clock out.');
@@ -171,13 +176,14 @@ export async function clockOut(userId: string): Promise<void> {
 }
 
 /**
- * Starts a break for a user.
+ * Starts a break for a user within a specific branch.
+ * @param branchId The ID of the branch.
  * @param userId The ID of the user starting a break.
  * @returns Promise<void>
  * @throws Will throw an error if the user is not clocked in or is already on a break.
  */
-export async function startBreak(userId: string): Promise<void> {
-  const openAttendanceId = await getOpenAttendanceRecordId(userId);
+export async function startBreak(branchId: string, userId: string): Promise<void> {
+  const openAttendanceId = await getOpenAttendanceRecordId(branchId, userId);
 
   if (!openAttendanceId) {
     throw new Error('User is not clocked in. Cannot start a break.');
@@ -205,13 +211,14 @@ export async function startBreak(userId: string): Promise<void> {
 }
 
 /**
- * Ends a break for a user.
+ * Ends a break for a user within a specific branch.
+ * @param branchId The ID of the branch.
  * @param userId The ID of the user ending a break.
  * @returns Promise<void>
  * @throws Will throw an error if the user is not clocked in or not on a break.
  */
-export async function endBreak(userId: string): Promise<void> {
-  const openAttendanceId = await getOpenAttendanceRecordId(userId);
+export async function endBreak(branchId: string, userId: string): Promise<void> {
+  const openAttendanceId = await getOpenAttendanceRecordId(branchId, userId);
 
   if (!openAttendanceId) {
     throw new Error('User is not clocked in. Cannot end a break.');
@@ -240,12 +247,13 @@ export async function endBreak(userId: string): Promise<void> {
 }
 
 /**
- * Updates an existing attendance record.
+ * Updates an existing attendance record for a specific branch.
+ * @param branchId The ID of the branch.
  * @param recordId The ID of the attendance record to update.
  * @param updatedFields An object containing the fields to update.
  * @returns Promise<void>
  */
-export async function updateAttendanceRecord(recordId: string, updatedFields: Partial<Attendance>): Promise<void> {
+export async function updateAttendanceRecord(branchId: string, recordId: string, updatedFields: Partial<Attendance>): Promise<void> {
   try {
     const attendanceDocRef = doc(db, 'attendance', recordId);
 
@@ -284,11 +292,12 @@ export async function updateAttendanceRecord(recordId: string, updatedFields: Pa
 }
 
 /**
- * Manually adds a new attendance record for a user.
+ * Manually adds a new attendance record for a user within a specific branch.
+ * @param branchId The ID of the branch.
  * @param newRecordData Object containing userId, userName, date (YYYY-MM-DD), checkIn (Date), checkOut (Date or null).
  * @returns Promise<void>
  */
-export async function addAttendanceRecord(newRecordData: {
+export async function addAttendanceRecord(branchId: string, newRecordData: {
   userId: string;
   userName: string;
   date: string;
@@ -310,6 +319,7 @@ export async function addAttendanceRecord(newRecordData: {
   try {
     const attendanceCol = collection(db, 'attendance');
     await addDoc(attendanceCol, {
+      branchId, // Add branchId here
       userId,
       userName,
       date,
@@ -327,18 +337,19 @@ export async function addAttendanceRecord(newRecordData: {
 
 
 /**
- * Fetches all attendance records relevant for the dashboard view.
+ * Fetches all attendance records relevant for the dashboard view for a specific branch.
+ * @param branchId The ID of the branch.
  * @returns Promise<Attendance[]> An array of relevant attendance records, one per user.
  */
-export async function getRelevantAttendanceRecordsForDashboard(): Promise<Attendance[]> {
+export async function getRelevantAttendanceRecordsForDashboard(branchId: string): Promise<Attendance[]> {
   try {
     const todayStr = getTodayDateString();
     const attendanceCol = collection(db, 'attendance');
 
-    const qTodayStarted = query(attendanceCol, where('date', '==', todayStr));
+    const qTodayStarted = query(attendanceCol, where('branchId', '==', branchId), where('date', '==', todayStr));
     const todayStartedSnapshot = await getDocs(qTodayStarted);
 
-    const qOpenSessions = query(attendanceCol, where('checkOut', '==', null));
+    const qOpenSessions = query(attendanceCol, where('branchId', '==', branchId), where('checkOut', '==', null));
     const openSessionsSnapshot = await getDocs(qOpenSessions);
 
     const allRelevantRecords: Attendance[] = [];
@@ -361,13 +372,14 @@ export async function getRelevantAttendanceRecordsForDashboard(): Promise<Attend
 }
 
 /**
- * Fetches monthly attendance records for a specific user.
+ * Fetches monthly attendance records for a specific user and branch.
+ * @param branchId The ID of the branch.
  * @param userId The ID of the user.
  * @param year The year for which to fetch records.
  * @param month The month for which to fetch records (1-12).
  * @returns Promise<Attendance[]> An array of attendance records for the specified month.
  */
-export async function getMonthlyAttendance(userId: string, year: number, month: number): Promise<Attendance[]> {
+export async function getMonthlyAttendance(branchId: string, userId: string, year: number, month: number): Promise<Attendance[]> {
   try {
     const attendanceCol = collection(db, 'attendance');
     const startOfMonthStr = `${year}-${String(month).padStart(2, '0')}-01`;
@@ -375,6 +387,7 @@ export async function getMonthlyAttendance(userId: string, year: number, month: 
 
     const q = query(
       attendanceCol,
+      where('branchId', '==', branchId), // Filter by branchId
       where('userId', '==', userId),
       where('date', '>=', startOfMonthStr),
       where('date', '<=', endOfMonthStr),
@@ -396,13 +409,14 @@ export async function getMonthlyAttendance(userId: string, year: number, month: 
 }
 
 /**
- * Fetches all attendance records from the collection.
+ * Fetches all attendance records from the collection for a specific branch.
+ * @param branchId The ID of the branch.
  * @returns Promise<Attendance[]> An array of all attendance records.
  */
-export async function getAllAttendanceRecords(): Promise<Attendance[]> {
+export async function getAllAttendanceRecords(branchId: string): Promise<Attendance[]> {
   try {
     const attendanceCol = collection(db, 'attendance');
-    const q = query(attendanceCol, orderBy('date', 'desc'), orderBy('checkIn', 'desc'));
+    const q = query(attendanceCol, where('branchId', '==', branchId), orderBy('date', 'desc'), orderBy('checkIn', 'desc'));
     const querySnapshot = await getDocs(q);
     
     const allRecords: Attendance[] = [];
@@ -418,13 +432,15 @@ export async function getAllAttendanceRecords(): Promise<Attendance[]> {
 }
 
 /**
- * Aggregates attendance data for a given period and optionally for a specific user.
+ * Aggregates attendance data for a given period and optionally for a specific user and branch.
+ * @param branchId The ID of the branch.
  * @param userId Optional. The ID of the user to filter by.
  * @param startDateStr The start date of the period (YYYY-MM-DD).
  * @param endDateStr The end date of the period (YYYY-MM-DD).
  * @returns Aggregated data per user including regular, night, and total minutes.
  */
 export async function getAggregatedAttendance(
+  branchId: string,
   userId: string | null,
   startDateStr: string,
   endDateStr: string
@@ -433,6 +449,7 @@ export async function getAggregatedAttendance(
     const attendanceCol = collection(db, 'attendance');
     let q: Query<DocumentData> = query(
       attendanceCol,
+      where('branchId', '==', branchId), // Filter by branchId
       where('date', '>=', startDateStr),
       where('date', '<=', endDateStr),
       orderBy('date', 'asc')

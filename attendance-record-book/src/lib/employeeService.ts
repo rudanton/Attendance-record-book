@@ -1,16 +1,15 @@
 // src/lib/employeeService.ts
-import { db } from '@/firebase/config'; // Placeholder for Firebase Firestore instance
+import { db } from '@/firebase/config';
 import { collection, addDoc, updateDoc, doc, Timestamp, query, where, getDocs } from 'firebase/firestore';
 import { User } from './types';
 
-// Assuming db is properly initialized and exported from '@/firebase/config'
-
 /**
  * Adds a new employee to the 'users' collection with isActive set to true.
+ * @param branchId The ID of the branch the employee belongs to.
  * @param employeeData Partial User object containing name, pin, role, hourlyRate.
  * @returns Promise<User> The added user with generated UID and joinedAt timestamp.
  */
-export async function addEmployee(employeeData: Omit<User, 'uid' | 'isActive' | 'joinedAt'>): Promise<User> {
+export async function addEmployee(branchId: string, employeeData: Omit<User, 'uid' | 'branchId' | 'isActive' | 'joinedAt'>): Promise<User> {
   const minWage = parseFloat(process.env.NEXT_PUBLIC_MINIMUM_WAGE || '0');
   if (employeeData.hourlyRate < minWage) {
     throw new Error(`시급은 최저시급(${minWage.toLocaleString()}원) 이상이어야 합니다.`);
@@ -19,6 +18,7 @@ export async function addEmployee(employeeData: Omit<User, 'uid' | 'isActive' | 
   try {
     const newUser: Omit<User, 'uid'> = {
       ...employeeData,
+      branchId, // Add branchId here
       isActive: true,
       joinedAt: Timestamp.now(),
     };
@@ -46,10 +46,11 @@ export async function addEmployee(employeeData: Omit<User, 'uid' | 'isActive' | 
 
 /**
  * Performs a soft delete on an employee by setting their isActive status to false.
+ * @param branchId The ID of the branch the employee belongs to (for future context, though not directly used in update).
  * @param uid The unique ID of the employee to "delete".
  * @returns Promise<void>
  */
-export async function deleteEmployee(uid: string): Promise<void> {
+export async function deleteEmployee(branchId: string, uid: string): Promise<void> {
   try {
     const employeeRef = doc(db, 'users', uid);
     await updateDoc(employeeRef, {
@@ -63,10 +64,11 @@ export async function deleteEmployee(uid: string): Promise<void> {
 
 /**
  * Reactivates an employee by setting their isActive status to true.
+ * @param branchId The ID of the branch the employee belongs to (for future context, though not directly used in update).
  * @param uid The unique ID of the employee to reactivate.
  * @returns Promise<void>
  */
-export async function reactivateEmployee(uid: string): Promise<void> {
+export async function reactivateEmployee(branchId: string, uid: string): Promise<void> {
   try {
     const employeeRef = doc(db, 'users', uid);
     await updateDoc(employeeRef, {
@@ -80,11 +82,12 @@ export async function reactivateEmployee(uid: string): Promise<void> {
 
 /**
  * Updates the hourly rate for a specific employee.
+ * @param branchId The ID of the branch the employee belongs to (for future context, though not directly used in update).
  * @param uid The unique ID of the employee.
  * @param newRate The new hourly rate to set.
  * @returns Promise<void>
  */
-export async function updateEmployeeRate(uid: string, newRate: number): Promise<void> {
+export async function updateEmployeeRate(branchId: string, uid: string, newRate: number): Promise<void> {
   const minWage = parseFloat(process.env.NEXT_PUBLIC_MINIMUM_WAGE || '0');
   if (newRate < minWage) {
     throw new Error(`시급은 최저시급(${minWage.toLocaleString()}원) 이상이어야 합니다.`);
@@ -106,13 +109,15 @@ export async function updateEmployeeRate(uid: string, newRate: number): Promise<
 }
 
 /**
- * Fetches all employees from the 'users' collection, regardless of active status.
- * @returns Promise<User[]> An array of all employees.
+ * Fetches all employees from the 'users' collection for a specific branch, regardless of active status.
+ * @param branchId The ID of the branch to filter employees by.
+ * @returns Promise<User[]> An array of all employees for the specified branch.
  */
-export async function getAllEmployees(): Promise<User[]> {
+export async function getAllEmployees(branchId: string): Promise<User[]> {
   try {
     const usersCollectionRef = collection(db, 'users');
-    const querySnapshot = await getDocs(usersCollectionRef);
+    const q = query(usersCollectionRef, where('branchId', '==', branchId)); // Filter by branchId
+    const querySnapshot = await getDocs(q);
     
     const employees: User[] = [];
     querySnapshot.forEach((doc) => {
@@ -127,13 +132,14 @@ export async function getAllEmployees(): Promise<User[]> {
 }
 
 /**
- * Fetches all active employees from the 'users' collection.
- * @returns Promise<User[]> An array of active employees.
+ * Fetches all active employees from the 'users' collection for a specific branch.
+ * @param branchId The ID of the branch to filter active employees by.
+ * @returns Promise<User[]> An array of active employees for the specified branch.
  */
-export async function getActiveEmployees(): Promise<User[]> {
+export async function getActiveEmployees(branchId: string): Promise<User[]> {
   try {
     const usersCollectionRef = collection(db, 'users');
-    const q = query(usersCollectionRef, where('isActive', '==', true));
+    const q = query(usersCollectionRef, where('branchId', '==', branchId), where('isActive', '==', true)); // Filter by branchId and isActive
     const querySnapshot = await getDocs(q);
     
     const employees: User[] = [];

@@ -1,27 +1,60 @@
 "use client";
 
 import { useEffect, useState, useCallback } from 'react';
-import { User } from '@/lib/types';
+import { User, Branch } from '@/lib/types';
 import { 
   getAllEmployees, 
   deleteEmployee, 
   reactivateEmployee,
   updateEmployeeRate
 } from '@/lib/employeeService';
+import { getAllBranches } from '@/lib/branchService'; // Import branch service
 import AdminRouteGuard from '@/components/admin/AdminRouteGuard';
 import Link from 'next/link';
 
 function ManageEmployeesPageContent() {
   const [employees, setEmployees] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [newBranchName, setNewBranchName] = useState(''); // Not used here, but kept if needed for future
   const [editingUid, setEditingUid] = useState<string | null>(null);
   const [newRate, setNewRate] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<'active' | 'inactive'>('active');
 
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+  const [selectedBranchName, setSelectedBranchName] = useState<string | null>(null);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+
+  // Load branches and selected branch from localStorage on initial render
+  useEffect(() => {
+    async function loadInitialData() {
+      const fetchedBranches = await getAllBranches();
+      setBranches(fetchedBranches);
+
+      const storedBranchId = localStorage.getItem('selectedBranchId');
+      if (storedBranchId && fetchedBranches.some(b => b.branchId === storedBranchId)) {
+        setSelectedBranchId(storedBranchId);
+        setSelectedBranchName(fetchedBranches.find(b => b.branchId === storedBranchId)?.branchName || null);
+      } else if (fetchedBranches.length > 0) {
+        // If stored ID is invalid or not found, select the first branch
+        setSelectedBranchId(fetchedBranches[0].branchId);
+        setSelectedBranchName(fetchedBranches[0].branchName);
+        localStorage.setItem('selectedBranchId', fetchedBranches[0].branchId);
+      }
+      setInitialLoadComplete(true);
+    }
+    loadInitialData();
+  }, []);
+
   const fetchEmployees = useCallback(async () => {
+    if (!selectedBranchId) {
+      setEmployees([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const allEmployees = await getAllEmployees();
+      const allEmployees = await getAllEmployees(selectedBranchId);
       setEmployees(allEmployees);
     } catch (error) {
       console.error("Failed to fetch employees:", error);
@@ -29,16 +62,26 @@ function ManageEmployeesPageContent() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedBranchId]);
 
   useEffect(() => {
-    fetchEmployees();
-  }, [fetchEmployees]);
+    if (initialLoadComplete) {
+      fetchEmployees();
+    }
+  }, [initialLoadComplete, fetchEmployees]);
+
+  const handleBranchChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newBranchId = e.target.value;
+    setSelectedBranchId(newBranchId);
+    setSelectedBranchName(branches.find(b => b.branchId === newBranchId)?.branchName || null);
+    localStorage.setItem('selectedBranchId', newBranchId);
+  };
 
   const handleDeleteEmployee = async (uid: string) => {
+    if (!selectedBranchId) return;
     if (window.confirm("정말로 이 직원을 퇴사 처리하시겠습니까?")) {
       try {
-        await deleteEmployee(uid);
+        await deleteEmployee(selectedBranchId, uid);
         await fetchEmployees();
       } catch (error) {
         console.error("Failed to deactivate employee:", error);
@@ -48,9 +91,10 @@ function ManageEmployeesPageContent() {
   };
 
   const handleReactivateEmployee = async (uid: string) => {
+    if (!selectedBranchId) return;
     if (window.confirm("정말로 이 직원을 복귀 처리하시겠습니까?")) {
       try {
-        await reactivateEmployee(uid);
+        await reactivateEmployee(selectedBranchId, uid);
         await fetchEmployees();
       } catch (error) {
         console.error("Failed to reactivate employee:", error);
@@ -70,8 +114,9 @@ function ManageEmployeesPageContent() {
   };
 
   const handleSaveRate = async (uid: string) => {
+    if (!selectedBranchId) return;
     try {
-      await updateEmployeeRate(uid, newRate);
+      await updateEmployeeRate(selectedBranchId, uid, newRate);
       setEditingUid(null);
       await fetchEmployees();
     } catch (error) {
@@ -91,15 +136,52 @@ function ManageEmployeesPageContent() {
         : 'text-gray-500 hover:text-gray-700 bg-gray-50'
     }`;
 
+  if (!initialLoadComplete) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-100 text-gray-800">
+        <p>초기 데이터를 불러오는 중...</p>
+      </main>
+    );
+  }
+
+  if (branches.length === 0) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-100 text-gray-800 text-center">
+        <h1 className="text-4xl font-bold mb-4">등록된 지점이 없습니다.</h1>
+        <p className="text-xl mb-8">지점 관리에 접속하여 먼저 지점을 추가해주세요.</p>
+        <Link href="/admin/manage-branches">
+          <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition-colors duration-300">
+            지점 관리로 이동
+          </button>
+        </Link>
+      </main>
+    );
+  }
+
   return (
     <main className="flex min-h-screen flex-col items-center p-12 bg-gray-100">
       <div className="w-full max-w-4xl">
-        <div className="flex justify-start items-center mb-8">
+        <div className="flex justify-between items-center mb-8">
             <Link href="/admin" className="text-blue-600 hover:text-blue-800">
                 ← 관리자 메뉴로 돌아가기
             </Link>
+            <div className="flex items-center space-x-2">
+                <label htmlFor="branch-select" className="text-sm font-medium text-gray-700">현재 지점:</label>
+                <select 
+                    id="branch-select" 
+                    value={selectedBranchId || ''} 
+                    onChange={handleBranchChange} 
+                    className="p-2 border rounded-md"
+                >
+                    {branches.map(branch => (
+                        <option key={branch.branchId} value={branch.branchId}>{branch.branchName}</option>
+                    ))}
+                </select>
+            </div>
         </div>
-        <h1 className="text-4xl font-bold mb-8 text-gray-800">직원 목록 관리</h1>
+        <h1 className="text-4xl font-bold mb-8 text-gray-800">
+            {selectedBranchName ? `${selectedBranchName} - ` : ''}직원 목록 관리
+        </h1>
         
         {/* Tabs */}
         <div className="border-b border-gray-200 mb-[-1px]">

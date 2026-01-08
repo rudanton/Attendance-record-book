@@ -11,38 +11,84 @@ import {
   endBreak, 
   getRelevantAttendanceRecordsForDashboard 
 } from '@/lib/attendanceService';
+import BranchSelectPage from '@/components/BranchSelectPage';
+import { getAllBranches } from '@/lib/branchService'; // To get branch name
 
 export default function HomePage() {
   const [employees, setEmployees] = useState<User[]>([]);
   const [attendance, setAttendance] = useState<Map<string, Attendance>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+  const [selectedBranchName, setSelectedBranchName] = useState<string | null>(null);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+
+  useEffect(() => {
+    // On initial load, try to get branchId from localStorage
+    const storedBranchId = localStorage.getItem('selectedBranchId');
+    if (storedBranchId) {
+      setSelectedBranchId(storedBranchId);
+    }
+    setInitialLoadComplete(true);
+  }, []);
+
+  const handleBranchSelected = useCallback(async (branchId: string) => {
+    localStorage.setItem('selectedBranchId', branchId);
+    setSelectedBranchId(branchId);
+    // Fetch all branches to get the name for the selected ID
+    try {
+      const branches = await getAllBranches();
+      const branch = branches.find(b => b.branchId === branchId);
+      setSelectedBranchName(branch ? branch.branchName : null);
+    } catch (error) {
+      console.error("Failed to fetch branch name:", error);
+    }
+  }, []);
 
   const fetchAllData = useCallback(async () => {
+    if (!selectedBranchId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     try {
-      const [activeEmployees, relevantAttendance] = await Promise.all([
-        getActiveEmployees(),
-        getRelevantAttendanceRecordsForDashboard(),
+      const [activeEmployees, relevantAttendance, allBranches] = await Promise.all([
+        getActiveEmployees(selectedBranchId),
+        getRelevantAttendanceRecordsForDashboard(selectedBranchId),
+        getAllBranches() // Fetch branches to get the name
       ]);
       setEmployees(activeEmployees);
       const attendanceMap = new Map(relevantAttendance.map(a => [a.userId, a]));
       setAttendance(attendanceMap);
+
+      const branch = allBranches.find(b => b.branchId === selectedBranchId);
+      setSelectedBranchName(branch ? branch.branchName : null);
+
     } catch (error) {
       console.error("Failed to initialize dashboard:", error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [selectedBranchId]);
 
   useEffect(() => {
-    fetchAllData();
-  }, [fetchAllData]);
+    if (initialLoadComplete && selectedBranchId) {
+      fetchAllData();
+    } else if (initialLoadComplete && !selectedBranchId) {
+      setLoading(false); // No branch selected, so stop loading
+    }
+  }, [initialLoadComplete, selectedBranchId, fetchAllData]);
+
 
   const handleClockIn = async (userId: string, userName: string) => {
+    if (!selectedBranchId) {
+      alert("지점을 먼저 선택해주세요.");
+      return;
+    }
     setRefreshing(true);
     try {
-      await clockIn(userId, userName);
+      await clockIn(selectedBranchId, userId, userName);
       await fetchAllData();
     } catch (error) {
       console.error("Clock-in failed:", error);
@@ -52,9 +98,13 @@ export default function HomePage() {
   };
 
   const handleClockOut = async (userId: string) => {
+    if (!selectedBranchId) {
+      alert("지점을 먼저 선택해주세요.");
+      return;
+    }
     setRefreshing(true);
     try {
-      await clockOut(userId);
+      await clockOut(selectedBranchId, userId);
       await fetchAllData();
     } catch (error) {
       console.error("Clock-out failed:", error);
@@ -64,9 +114,13 @@ export default function HomePage() {
   };
 
   const handleStartBreak = async (userId: string) => {
+    if (!selectedBranchId) {
+      alert("지점을 먼저 선택해주세요.");
+      return;
+    }
     setRefreshing(true);
     try {
-      await startBreak(userId);
+      await startBreak(selectedBranchId, userId);
       await fetchAllData();
     } catch (error) {
       console.error("Start break failed:", error);
@@ -76,9 +130,13 @@ export default function HomePage() {
   };
 
   const handleEndBreak = async (userId: string) => {
+    if (!selectedBranchId) {
+      alert("지점을 먼저 선택해주세요.");
+      return;
+    }
     setRefreshing(true);
     try {
-      await endBreak(userId);
+      await endBreak(selectedBranchId, userId);
       await fetchAllData();
     } catch (error) {
       console.error("End break failed:", error);
@@ -100,17 +158,41 @@ export default function HomePage() {
     return { text: "알 수 없음", color: "text-gray-400" };
   };
 
+  if (!initialLoadComplete) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-900 text-white">
+        <p>앱 로딩 중...</p>
+      </main>
+    );
+  }
+
+  if (!selectedBranchId) {
+    return <BranchSelectPage onBranchSelected={handleBranchSelected} />;
+  }
+
   if (loading) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-900 text-white">
-        <p>로딩 중...</p>
+        <p>데이터 로딩 중...</p>
       </main>
     );
   }
 
   return (
     <main className="flex min-h-screen flex-col items-center p-12 bg-gray-900 text-white">
-      <h1 className="text-5xl font-bold mb-8">출퇴근 대시보드</h1>
+      <h1 className="text-5xl font-bold mb-4">
+        {selectedBranchName || '선택된 지점'} 출퇴근 대시보드
+      </h1>
+      <button
+        onClick={() => {
+          localStorage.removeItem('selectedBranchId');
+          setSelectedBranchId(null);
+          setSelectedBranchName(null);
+        }}
+        className="mb-8 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors duration-300"
+      >
+        지점 변경
+      </button>
       {refreshing && <div className="absolute top-4 right-4 text-white">새로고침 중...</div>}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-full max-w-7xl">
         {employees.length > 0 ? (
