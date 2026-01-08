@@ -62,7 +62,8 @@ function calculateWorkMinutes(
     });
 
     if (!isBreak) {
-      const hour = currentMinute.getHours();
+      // Use UTC hours so calculations stay consistent across server/timezone differences.
+      const hour = currentMinute.getUTCHours();
       // Night hours are 22, 23, 0, 1, 2, 3, 4
       if (hour >= 22 || hour < 5) {
         nightMinutes++;
@@ -79,6 +80,11 @@ function calculateWorkMinutes(
     totalWorkMinutes: regularMinutes + nightMinutes,
   };
 }
+
+// Expose internal helpers for testing
+export const __testables = {
+  calculateWorkMinutes,
+};
 
 
 /**
@@ -316,9 +322,47 @@ export async function updateAttendanceRecord(branchId: string, recordId: string,
 
     if (updatedFields.checkIn || updatedFields.checkOut || updatedFields.breaks) {
       const calculatedCheckIn = newCheckIn instanceof Timestamp ? newCheckIn : Timestamp.fromDate(newCheckIn as Date);
-      const calculatedCheckOut = newCheckOut instanceof Timestamp ? newCheckOut : (newCheckOut ? Timestamp.fromDate(newCheckOut as Date) : null);
+      let calculatedCheckOut = newCheckOut instanceof Timestamp ? newCheckOut : (newCheckOut ? Timestamp.fromDate(newCheckOut as Date) : null);
+      let finalBreaks = [...newBreaks];
 
-      workMinutes = calculateWorkMinutes(calculatedCheckIn, calculatedCheckOut, newBreaks);
+      // If checkout exists and work is 8+ hours, ensure minimum 1 hour break
+      if (calculatedCheckOut) {
+        // Calculate current break minutes
+        let totalBreakMinutes = 0;
+        finalBreaks.forEach(_break => {
+          if (_break.start && _break.end) {
+            totalBreakMinutes += Math.floor(((_break.end.toDate().getTime() - _break.start.toDate().getTime()) / 60000));
+          }
+        });
+
+        // Calculate total work time (elapsed time - break time)
+        const totalElapsedMinutes = Math.floor((calculatedCheckOut.toDate().getTime() - calculatedCheckIn.toDate().getTime()) / 60000);
+        const totalWorkMinutes = totalElapsedMinutes - totalBreakMinutes;
+
+        // If total work time is 8+ hours, ensure minimum 1 hour break
+        const minBreakMinutes = 60;
+        if (totalWorkMinutes >= 8 * 60) {
+          if (totalBreakMinutes < minBreakMinutes) {
+            // Extend checkout time to ensure 1 hour break
+            const additionalBreakNeeded = minBreakMinutes - totalBreakMinutes;
+            const originalCheckOutDate = calculatedCheckOut.toDate();
+            const extendedCheckOutDate = new Date(originalCheckOutDate.getTime() + additionalBreakNeeded * 60000);
+            calculatedCheckOut = Timestamp.fromDate(extendedCheckOutDate);
+            
+            // Add a synthetic break for the additional time
+            finalBreaks.push({
+              start: Timestamp.fromDate(originalCheckOutDate),
+              end: calculatedCheckOut,
+            });
+            
+            // Update the updatedFields with new checkout and breaks
+            updatedFields.checkOut = calculatedCheckOut;
+            updatedFields.breaks = finalBreaks;
+          }
+        }
+      }
+
+      workMinutes = calculateWorkMinutes(calculatedCheckIn, calculatedCheckOut, finalBreaks);
     }
 
     await updateDoc(attendanceDocRef, {
@@ -353,20 +397,54 @@ export async function addAttendanceRecord(branchId: string, newRecordData: {
   }
 
   const checkInTimestamp = Timestamp.fromDate(checkIn);
-  const checkOutTimestamp = checkOut ? Timestamp.fromDate(checkOut) : null;
+  let checkOutTimestamp = checkOut ? Timestamp.fromDate(checkOut) : null;
+  let finalBreaks = [...breaks];
 
-  const workMinutes = calculateWorkMinutes(checkInTimestamp, checkOutTimestamp, breaks);
+  // If checkout exists and work is 8+ hours, ensure minimum 1 hour break
+  if (checkOutTimestamp) {
+    // Calculate current break minutes
+    let totalBreakMinutes = 0;
+    finalBreaks.forEach(_break => {
+      if (_break.start && _break.end) {
+        totalBreakMinutes += Math.floor(((_break.end.toDate().getTime() - _break.start.toDate().getTime()) / 60000));
+      }
+    });
+
+    // Calculate total work time (elapsed time - break time)
+    const totalElapsedMinutes = Math.floor((checkOutTimestamp.toDate().getTime() - checkInTimestamp.toDate().getTime()) / 60000);
+    const totalWorkMinutes = totalElapsedMinutes - totalBreakMinutes;
+
+    // If total work time is 8+ hours, ensure minimum 1 hour break
+    const minBreakMinutes = 60;
+    if (totalWorkMinutes >= 8 * 60) {
+      if (totalBreakMinutes < minBreakMinutes) {
+        // Extend checkout time to ensure 1 hour break
+        const additionalBreakNeeded = minBreakMinutes - totalBreakMinutes;
+        const originalCheckOutDate = checkOutTimestamp.toDate();
+        const extendedCheckOutDate = new Date(originalCheckOutDate.getTime() + additionalBreakNeeded * 60000);
+        checkOutTimestamp = Timestamp.fromDate(extendedCheckOutDate);
+        
+        // Add a synthetic break for the additional time
+        finalBreaks.push({
+          start: Timestamp.fromDate(originalCheckOutDate),
+          end: checkOutTimestamp,
+        });
+      }
+    }
+  }
+
+  const workMinutes = calculateWorkMinutes(checkInTimestamp, checkOutTimestamp, finalBreaks);
 
   try {
     const attendanceCol = collection(db, 'attendance');
     await addDoc(attendanceCol, {
-      branchId, // Add branchId here
+      branchId,
       userId,
       userName,
       date,
       checkIn: checkInTimestamp,
       checkOut: checkOutTimestamp,
-      breaks,
+      breaks: finalBreaks,
       isModified: true,
       ...workMinutes,
     });

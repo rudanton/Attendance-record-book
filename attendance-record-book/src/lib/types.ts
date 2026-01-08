@@ -5,7 +5,6 @@ import { Timestamp } from 'firebase/firestore'; // Assuming firebase/firestore i
 export interface User {
   uid: string;            // Firebase Auth UID 또는 고유 ID
   name: string;           // 직원 이름
-  pin: string;            // 4자리 암호 (인증용)
   role: "admin" | "staff";
   hourlyRate: number;     // 시급
   isActive: boolean;      // Soft Delete 여부 (true: 재직, false: 퇴사)

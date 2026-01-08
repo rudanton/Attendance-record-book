@@ -5,8 +5,7 @@ import { User, Branch } from '@/lib/types';
 import { 
   getAllEmployees, 
   deleteEmployee, 
-  reactivateEmployee,
-  updateEmployeeRate
+  reactivateEmployee
 } from '@/lib/employeeService';
 import { getAllBranches } from '@/lib/branchService'; // Import branch service
 import AdminRouteGuard from '@/components/admin/AdminRouteGuard';
@@ -16,8 +15,6 @@ function ManageEmployeesPageContent() {
   const [employees, setEmployees] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [newBranchName, setNewBranchName] = useState(''); // Not used here, but kept if needed for future
-  const [editingUid, setEditingUid] = useState<string | null>(null);
-  const [newRate, setNewRate] = useState<number>(0);
   const [activeTab, setActiveTab] = useState<'active' | 'inactive'>('active');
 
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -103,28 +100,6 @@ function ManageEmployeesPageContent() {
     }
   };
 
-  const handleEditClick = (uid: string, currentRate: number) => {
-    setEditingUid(uid);
-    setNewRate(currentRate);
-  };
-
-  const handleCancelEdit = () => {
-    setEditingUid(null);
-    setNewRate(0);
-  };
-
-  const handleSaveRate = async (uid: string) => {
-    if (!selectedBranchId) return;
-    try {
-      await updateEmployeeRate(selectedBranchId, uid, newRate);
-      setEditingUid(null);
-      await fetchEmployees();
-    } catch (error) {
-      console.error("Failed to update rate:", error);
-      alert(error instanceof Error ? error.message : "시급을 수정할 수 없습니다.");
-    }
-  };
-
   const activeEmployees = employees.filter(e => e.isActive);
   const inactiveEmployees = employees.filter(e => !e.isActive);
   const displayedEmployees = activeTab === 'active' ? activeEmployees : inactiveEmployees;
@@ -204,7 +179,6 @@ function ManageEmployeesPageContent() {
                 <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">이름</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3">시급</th>
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">작업</th>
                 </tr>
                 </thead>
@@ -218,33 +192,6 @@ function ManageEmployeesPageContent() {
                         }`}>
                         {employee.isActive ? '재직중' : '퇴사'}
                         </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {editingUid === employee.uid ? (
-                        <div className="flex items-center space-x-2">
-                            <input 
-                            type="number"
-                            value={newRate}
-                            onChange={(e) => setNewRate(parseFloat(e.target.value))}
-                            className="p-1 border rounded-md w-24"
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                handleSaveRate(employee.uid);
-                                } else if (e.key === 'Escape') {
-                                handleCancelEdit();
-                                }
-                            }}
-                            autoFocus
-                            />
-                            <button onClick={() => handleSaveRate(employee.uid)} className="text-green-600 hover:text-green-900">저장</button>
-                            <button onClick={handleCancelEdit} className="text-gray-600 hover:text-gray-900">취소</button>
-                        </div>
-                        ) : (
-                        <div className="flex items-center space-x-4">
-                            <span>{`₩${employee.hourlyRate.toLocaleString()}`}</span>
-                            <button onClick={() => handleEditClick(employee.uid, employee.hourlyRate)} className="text-xs text-indigo-600 hover:text-indigo-900">수정</button>
-                        </div>
-                        )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                         {employee.isActive ? (

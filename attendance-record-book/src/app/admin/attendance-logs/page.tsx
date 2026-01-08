@@ -252,7 +252,18 @@ function AdminAttendanceLogsContent() {
     if (!currentRecord) return;
     
     const originalTimestamp = name === 'checkIn' ? currentRecord.checkIn : currentRecord.checkOut;
-    const newTimestamp = parseTimeToTimestamp(value, originalTimestamp, currentRecord.date);
+    let newTimestamp = parseTimeToTimestamp(value, originalTimestamp, currentRecord.date);
+    
+    // 퇴근 시간을 수정하는 경우, 출근 시간보다 이르면 다음날로 간주
+    if (name === 'checkOut' && newTimestamp && editingFormData.checkIn) {
+      const checkInDate = (editingFormData.checkIn as Timestamp).toDate();
+      const checkOutDate = newTimestamp.toDate();
+      if (checkOutDate <= checkInDate) {
+        checkOutDate.setDate(checkOutDate.getDate() + 1);
+        newTimestamp = Timestamp.fromDate(checkOutDate);
+      }
+    }
+    
     setEditingFormData(prev => ({ ...prev, [name]: newTimestamp }));
   };
 
@@ -310,7 +321,15 @@ function AdminAttendanceLogsContent() {
     try {
       // Combine date and time to create full datetime
       const checkInDateTime = new Date(`${date}T${checkInTime}:00`);
-      const checkOutDateTime = checkOutTime ? new Date(`${date}T${checkOutTime}:00`) : null;
+      let checkOutDateTime: Date | null = null;
+      
+      if (checkOutTime) {
+        checkOutDateTime = new Date(`${date}T${checkOutTime}:00`);
+        // 퇴근 시간이 출근 시간보다 이르면 다음날로 간주
+        if (checkOutDateTime <= checkInDateTime) {
+          checkOutDateTime.setDate(checkOutDateTime.getDate() + 1);
+        }
+      }
       
       await addAttendanceRecord(selectedBranchId, { userId, userName, date, checkIn: checkInDateTime, checkOut: checkOutDateTime });
       setNewRecordFormData({ userId: '', userName: '', date: formatDateToYMD(new Date()), checkInTime: '', checkOutTime: '' });
@@ -502,7 +521,7 @@ function AdminAttendanceLogsContent() {
 
         {/* Aggregation Section */}
         <div className="w-full max-w-7xl mb-8 p-6 bg-white rounded-lg shadow-md">
-            <h2 className="text-2xl font-semibold mb-4">근무 시간 정산 및 급여 계산</h2>
+            <h2 className="text-2xl font-semibold mb-4">근무 시간 정산</h2>
             <form onSubmit={handleAggregate} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div className="flex flex-col">
                 <label htmlFor="aggStartDate" className="text-sm font-medium text-gray-600 mb-1">시작일</label>
@@ -532,8 +551,6 @@ function AdminAttendanceLogsContent() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">총 근무</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">일반 근무</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">야간 근무</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">시급</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">예상 급여</th>
                     </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -543,8 +560,6 @@ function AdminAttendanceLogsContent() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold">{formatMinutes(data.totalWorkMinutes)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{formatMinutes(data.regularWorkMinutes)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">{formatMinutes(data.nightWorkMinutes)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">₩{data.hourlyRate.toLocaleString()}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">₩{data.estimatedSalary.toLocaleString()}</td>
                     </tr>
                     ))}
                 </tbody>

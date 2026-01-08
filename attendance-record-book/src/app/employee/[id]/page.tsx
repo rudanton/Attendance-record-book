@@ -135,7 +135,21 @@ export default function EmployeeDetailPage() {
     if (!currentRecord) return;
     
     const originalTimestamp = name === 'checkIn' ? currentRecord.checkIn : currentRecord.checkOut;
-    const newTimestamp = parseTimeToTimestamp(value, originalTimestamp, currentRecord.date);
+    let newTimestamp = parseTimeToTimestamp(value, originalTimestamp, currentRecord.date);
+    
+    // 퇴근 시간을 수정하는 경우, 출근 시간보다 이르면 다음날로 간주
+    if (name === 'checkOut' && newTimestamp) {
+      const checkInTs = (editingFormData.checkIn as Timestamp) || currentRecord.checkIn;
+      if (checkInTs) {
+        const checkInDate = checkInTs.toDate();
+        const checkOutDate = newTimestamp.toDate();
+        if (checkOutDate <= checkInDate) {
+          checkOutDate.setDate(checkOutDate.getDate() + 1);
+          newTimestamp = Timestamp.fromDate(checkOutDate);
+        }
+      }
+    }
+    
     setEditingFormData(prev => ({ ...prev, [name]: newTimestamp }));
   };
 
@@ -160,11 +174,21 @@ export default function EmployeeDetailPage() {
     if (!currentRecord) return;
 
     const checkInTs = (editingFormData.checkIn as Timestamp) || currentRecord.checkIn;
-    const checkOutTs = (editingFormData.checkOut as Timestamp) || currentRecord.checkOut;
+    let checkOutTs = (editingFormData.checkOut as Timestamp) || currentRecord.checkOut;
     
     if (!checkInTs || !checkOutTs) {
       alert('출근과 퇴근 시간을 먼저 입력하세요.');
       return;
+    }
+
+    // Normalize checkout to always be after checkin (handles overnight shifts)
+    const checkInDate = checkInTs.toDate();
+    const originalCheckOutDate = checkOutTs.toDate();
+    if (originalCheckOutDate <= checkInDate) {
+      const corrected = new Date(originalCheckOutDate.getTime());
+      corrected.setDate(corrected.getDate() + 1);
+      checkOutTs = Timestamp.fromDate(corrected);
+      setEditingFormData(prev => ({ ...prev, checkOut: checkOutTs }));
     }
 
     const existingBreaks = (editingFormData.breaks || currentRecord.breaks || []) as Attendance['breaks'];
@@ -176,19 +200,23 @@ export default function EmployeeDetailPage() {
       return;
     }
 
-    // Append a synthetic break right before checkout, but ensure it stays within work hours
+    // Append a synthetic break right before checkout
     const checkOutDate = checkOutTs.toDate();
-    const checkInDate = checkInTs.toDate();
+    
+    // Check if the work period is valid (checkout should be after checkin)
+    if (checkOutDate <= checkInDate) {
+      alert('출근과 퇴근 시간이 같거나 역순입니다.');
+      return;
+    }
+    
+    const totalWorkMinutes = Math.floor((checkOutDate.getTime() - checkInDate.getTime()) / 60000);
+    
+    // Calculate the break start time (missing minutes before checkout)
     let startDate = new Date(checkOutDate.getTime() - missing * 60000);
 
     // If start date goes before check-in, cap it at check-in time
     if (startDate < checkInDate) {
       startDate = checkInDate;
-      const adjustedMinutes = Math.floor((checkOutDate.getTime() - checkInDate.getTime()) / 60000);
-      if (adjustedMinutes <= 0) {
-        alert('출근과 퇴근 시간이 같거나 역순입니다.');
-        return;
-      }
     }
 
     const newBreak = { start: Timestamp.fromDate(startDate), end: Timestamp.fromDate(checkOutDate) } as Attendance['breaks'][number];

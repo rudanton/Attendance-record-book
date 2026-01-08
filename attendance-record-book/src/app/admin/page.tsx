@@ -10,6 +10,11 @@ function AdminDashboardContent() {
 
   return (
     <main className="flex min-h-screen flex-col items-center p-12 bg-gray-100">
+      <div className="w-full max-w-5xl mb-8">
+        <Link href="/" className="text-blue-600 hover:text-blue-800">
+          ← 기본 페이지로 돌아가기
+        </Link>
+      </div>
       <h1 className="text-4xl font-bold mb-12 text-gray-800">관리자 대시보드</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full max-w-5xl">
@@ -17,11 +22,6 @@ function AdminDashboardContent() {
         <Link href="/admin/manage-branches" className={cardClasses}>
           <h2 className={titleClasses}>지점 관리</h2>
           <p className={descriptionClasses}>지점을 추가, 수정, 삭제합니다.</p>
-        </Link>
-
-        <Link href="/admin/add-employee" className={cardClasses}>
-          <h2 className={titleClasses}>신규 직원 추가</h2>
-          <p className={descriptionClasses}>새로운 직원의 정보를 시스템에 등록합니다.</p>
         </Link>
 
         <Link href="/admin/manage-employees" className={cardClasses}>

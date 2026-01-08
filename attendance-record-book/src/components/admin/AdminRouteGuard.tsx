@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { onAuthStateChanged } from 'firebase/auth';
+import { usePathname, useRouter } from 'next/navigation';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/firebase/config';
 import { User } from '@/lib/types';
@@ -14,6 +14,15 @@ interface AdminRouteGuardProps {
 export default function AdminRouteGuard({ children }: AdminRouteGuardProps) {
   const [loadingUser, setLoadingUser] = useState(true);
   const router = useRouter();
+  const pathname = usePathname();
+
+  // If user navigates away from admin routes, log out the admin session
+  useEffect(() => {
+    if (!pathname) return;
+    if (!pathname.startsWith('/admin')) {
+      signOut(auth).catch(() => {});
+    }
+  }, [pathname]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {

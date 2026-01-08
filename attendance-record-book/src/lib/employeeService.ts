@@ -6,7 +6,7 @@ import { User } from './types';
 /**
  * Adds a new employee to the 'users' collection with isActive set to true.
  * @param branchId The ID of the branch the employee belongs to.
- * @param employeeData Partial User object containing name, pin, role, hourlyRate.
+ * @param employeeData Partial User object containing name, role, hourlyRate.
  * @returns Promise<User> The added user with generated UID and joinedAt timestamp.
  */
 export async function addEmployee(branchId: string, employeeData: Omit<User, 'uid' | 'branchId' | 'isActive' | 'joinedAt'>): Promise<User> {

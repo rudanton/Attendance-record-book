@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/firebase/config';
@@ -12,12 +13,18 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('adminEmail');
+    if (savedEmail) setEmail(savedEmail);
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      localStorage.setItem('adminEmail', email);
       // On successful login, redirect to admin dashboard
       router.push('/admin');
     } catch (err: any) {
@@ -38,6 +45,11 @@ export default function AdminLoginPage() {
     <main className="flex min-h-screen flex-col items-center justify-center p-12 bg-gray-100 text-gray-800">
       <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
         <h1 className="text-3xl font-bold mb-6 text-center">관리자 로그인</h1>
+        <div className="mb-4 text-center">
+          <Link href="/" className="text-blue-600 hover:text-blue-800 text-sm">
+            ← 기본 페이지로 돌아가기
+          </Link>
+        </div>
         <form onSubmit={handleLogin}>
           <div className="mb-4">
             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">이메일</label>
