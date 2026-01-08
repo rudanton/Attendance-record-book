@@ -32,6 +32,16 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+firebase-admin-key.json # Firebase Admin SDK 서비스 계정 키
+
+# Firebase & Local Run related
+firebase.rules # Firebase Security Rules (일반적으로 Git 관리 제외)
+firestore.indexes.json # Firestore Indexes (일반적으로 Git 관리 제외)
+functions/ # Firebase Functions 디렉토리 (빌드 아티팩트 또는 별도 저장소 관리)
+src/dataconnect-generated/ # Dataconnect 자동 생성 파일
+dataconnect/ # Dataconnect 프로젝트 폴더
+record-book/ # Record Book 프로젝트 폴더
+update-and-start.bat # 로컬 서버 실행 스크립트
 
 # vercel
 .vercel

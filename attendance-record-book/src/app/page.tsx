@@ -1,42 +1,35 @@
 "use client";
 
 import { useEffect, useState, useCallback } from 'react';
-import Link from 'next/link'; // Added this import
+import Link from 'next/link';
 import { User, Attendance } from '@/lib/types';
 import { getActiveEmployees } from '@/lib/employeeService';
-import { isDeviceAuthorized } from '@/lib/deviceAuthService';
-import { clockIn, clockOut, getRelevantAttendanceRecordsForDashboard } from '@/lib/attendanceService';
+import { 
+  clockIn, 
+  clockOut, 
+  startBreak, 
+  endBreak, 
+  getRelevantAttendanceRecordsForDashboard 
+} from '@/lib/attendanceService';
 
 export default function HomePage() {
   const [employees, setEmployees] = useState<User[]>([]);
   const [attendance, setAttendance] = useState<Map<string, Attendance>>(new Map());
-  const [isAuthorized, setIsAuthorized] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchAllData = useCallback(async () => {
-    // console.log("Starting data fetch..."); // Debugging logs can be removed or kept
     try {
-      // console.log("Checking device authorization...");
-      const authorized = await isDeviceAuthorized();
-      // console.log("Device authorized:", authorized);
-      setIsAuthorized(authorized);
-
-      if (authorized) {
-        // console.log("Fetching employees and attendance...");
-        const [activeEmployees, relevantAttendance] = await Promise.all([ // Renamed todaysAttendance to relevantAttendance
-          getActiveEmployees(),
-          getRelevantAttendanceRecordsForDashboard(), // Use the new function
-        ]);
-        // console.log("Data fetched successfully.");
-        setEmployees(activeEmployees);
-        const attendanceMap = new Map(relevantAttendance.map(a => [a.userId, a])); // Use relevantAttendance
-        setAttendance(attendanceMap);
-      }
+      const [activeEmployees, relevantAttendance] = await Promise.all([
+        getActiveEmployees(),
+        getRelevantAttendanceRecordsForDashboard(),
+      ]);
+      setEmployees(activeEmployees);
+      const attendanceMap = new Map(relevantAttendance.map(a => [a.userId, a]));
+      setAttendance(attendanceMap);
     } catch (error) {
       console.error("Failed to initialize dashboard:", error);
     } finally {
-      // console.log("Finished data fetch. Setting loading to false.");
       setLoading(false);
       setRefreshing(false);
     }
@@ -70,11 +63,40 @@ export default function HomePage() {
     }
   };
 
+  const handleStartBreak = async (userId: string) => {
+    setRefreshing(true);
+    try {
+      await startBreak(userId);
+      await fetchAllData();
+    } catch (error) {
+      console.error("Start break failed:", error);
+      alert(error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.");
+      setRefreshing(false);
+    }
+  };
+
+  const handleEndBreak = async (userId: string) => {
+    setRefreshing(true);
+    try {
+      await endBreak(userId);
+      await fetchAllData();
+    } catch (error) {
+      console.error("End break failed:", error);
+      alert(error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.");
+      setRefreshing(false);
+    }
+  };
+
   const getStatus = (employeeId: string) => {
     const record = attendance.get(employeeId);
     if (!record || !record.checkIn) return { text: "출근 전", color: "text-yellow-400" };
+    
+    const isOnBreak = record.breaks?.some(b => b.start && !b.end);
+    if (isOnBreak) return { text: "휴식 중", color: "text-cyan-400" };
+
     if (record.checkIn && !record.checkOut) return { text: "근무 중", color: "text-green-400" };
     if (record.checkIn && record.checkOut) return { text: "퇴근 완료", color: "text-red-400" };
+    
     return { text: "알 수 없음", color: "text-gray-400" };
   };
 
@@ -82,16 +104,6 @@ export default function HomePage() {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-900 text-white">
         <p>로딩 중...</p>
-      </main>
-    );
-  }
-
-  if (!isAuthorized) {
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-red-900 text-white">
-        <h1 className="text-4xl font-bold mb-4">접근 거부됨</h1>
-        <p>이 기기는 출퇴근 시스템에 접근할 권한이 없습니다.</p>
-        <p className="mt-4 text-sm text-gray-300">관리자에게 문의하세요.</p>
       </main>
     );
   }
@@ -105,10 +117,11 @@ export default function HomePage() {
           employees.map((employee) => {
             const status = getStatus(employee.uid);
             const attendanceRecord = attendance.get(employee.uid);
-            // '출근' 버튼은 현재 열려 있는 세션이 없을 때 활성화
+
             const canClockIn = !attendanceRecord || !!(attendanceRecord.checkIn && attendanceRecord.checkOut);
-            // '퇴근' 버튼은 현재 열려 있는 세션이 있을 때 활성화
-            const canClockOut = !!(attendanceRecord?.checkIn && !attendanceRecord?.checkOut);
+            const isClockedIn = !!(attendanceRecord?.checkIn && !attendanceRecord?.checkOut);
+            const openBreak = isClockedIn && attendanceRecord.breaks?.find(b => b.start && !b.end);
+            const isOnBreak = !!openBreak;
 
             return (
               <div key={employee.uid} className="bg-gray-800 rounded-lg shadow-lg p-6 flex flex-col justify-between">
@@ -121,26 +134,54 @@ export default function HomePage() {
                     {attendanceRecord?.checkIn && (
                       <div>출근: {new Date(attendanceRecord.checkIn.seconds * 1000).toLocaleTimeString()}</div>
                     )}
+                    {openBreak && (
+                      <div className="text-cyan-400">휴식 시작: {new Date(openBreak.start.seconds * 1000).toLocaleTimeString()}</div>
+                    )}
                     {attendanceRecord?.checkOut && (
                       <div>퇴근: {new Date(attendanceRecord.checkOut.seconds * 1000).toLocaleTimeString()}</div>
                     )}
                   </div>
                 </div>
                 <div className="flex flex-col space-y-2 mt-4">
-                  <button
-                    onClick={() => handleClockIn(employee.uid, employee.name)}
-                    disabled={!canClockIn || refreshing}
-                    className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                  >
-                    출근
-                  </button>
-                  <button
-                    onClick={() => handleClockOut(employee.uid)}
-                    disabled={!canClockOut || refreshing}
-                    className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                  >
-                    퇴근
-                  </button>
+                  {/* 출근 버튼 */}
+                  {canClockIn && (
+                    <button
+                      onClick={() => handleClockIn(employee.uid, employee.name)}
+                      disabled={refreshing}
+                      className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500"
+                    >
+                      출근하기
+                    </button>
+                  )}
+                  {/* 근무 중일 때 버튼들 */}
+                  {isClockedIn && !isOnBreak && (
+                    <>
+                      <button
+                        onClick={() => handleStartBreak(employee.uid)}
+                        disabled={refreshing}
+                        className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500"
+                      >
+                        휴식 시작
+                      </button>
+                      <button
+                        onClick={() => handleClockOut(employee.uid)}
+                        disabled={refreshing}
+                        className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500"
+                      >
+                        퇴근하기
+                      </button>
+                    </>
+                  )}
+                  {/* 휴식 중일 때 버튼 */}
+                  {isClockedIn && isOnBreak && (
+                    <button
+                      onClick={() => handleEndBreak(employee.uid)}
+                      disabled={refreshing}
+                      className="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500"
+                    >
+                      휴식 종료
+                    </button>
+                  )}
                 </div>
               </div>
             );

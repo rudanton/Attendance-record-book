@@ -25,11 +25,14 @@ export interface Attendance {
   checkIn: Timestamp;     // 출근 시간
   checkOut: Timestamp | null; // 퇴근 시간
   breaks: BreakRecord[];
-  isModified: boolean;    // 관리자 수정 여부
-  totalWorkMinutes: number; // 총 근무 시간 (정산용)
+  isModified: boolean;
+  regularWorkMinutes: number;
+  nightWorkMinutes: number;
+  totalWorkMinutes: number;
+};
+
+export interface Branch {
+  branchId: string;       // 지점 고유 ID
+  branchName: string;     // 지점명 (예: "강남점", "홍대점")
 }
 
-export interface Config {
-  id: "authorized_devices";
-  tokens: string[];       // 인증된 기기(브라우저) 토큰 리스트
-}

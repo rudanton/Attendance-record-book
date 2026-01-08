@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getMonthlyAttendance } from '@/lib/attendanceService';
 import { Attendance } from '@/lib/types';
+import { differenceInMinutes } from 'date-fns'; // Import differenceInMinutes
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -99,7 +100,7 @@ export default function EmployeeDetailPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">날짜</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">출근 시간</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">퇴근 시간</th>
-                {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">휴식 시간</th> */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">휴식 시간</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">총 근무 시간</th>
               </tr>
             </thead>
@@ -109,14 +110,27 @@ export default function EmployeeDetailPage() {
                   <tr key={record.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{record.date}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {record.checkIn ? new Date(record.checkIn.seconds * 1000).toLocaleTimeString('ko-KR') : '-'}
+                      {record.checkIn ? new Date(record.checkIn.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {record.checkOut ? new Date(record.checkOut.seconds * 1000).toLocaleTimeString('ko-KR') : '근무 중'}
+                      {record.checkOut ? new Date(record.checkOut.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '근무 중'}
                     </td>
-                    {/* <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {record.breaks.length > 0 ? record.breaks.map(b => `${new Date(b.start.seconds * 1000).toLocaleTimeString()} - ${b.end ? new Date(b.end.seconds * 1000).toLocaleTimeString() : '진행중'}`).join(', ') : '-'}
-                    </td> */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {record.breaks && record.breaks.length > 0 ? 
+                        record.breaks.map((b, index) => {
+                          const breakStartTime = new Date(b.start.seconds * 1000);
+                          const breakEndTime = b.end ? new Date(b.end.seconds * 1000) : null;
+                          const duration = breakEndTime ? differenceInMinutes(breakEndTime, breakStartTime) : null;
+                          
+                          return (
+                            <div key={index}>
+                              {breakStartTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} - {breakEndTime ? breakEndTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '진행중'}
+                              {duration !== null && duration > 0 && ` (${duration}분)`}
+                            </div>
+                          );
+                        })
+                       : '-'}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {record.totalWorkMinutes > 0 ? `${Math.floor(record.totalWorkMinutes / 60)}시간 ${record.totalWorkMinutes % 60}분` : '-'}
                     </td>

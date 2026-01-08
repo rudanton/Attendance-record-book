@@ -7,16 +7,16 @@ import {
   addDoc,
   updateDoc,
   doc,
-  getDoc, // Add getDoc
+  getDoc,
   serverTimestamp,
   orderBy,
   limit,
-  Timestamp, // Import Timestamp from firebase/firestore
-  Query, // Add Query
-  DocumentData, // Add DocumentData
+  Timestamp,
+  Query,
+  DocumentData,
 } from 'firebase/firestore';
 import { Attendance } from './types';
-import { differenceInSeconds, isValid } from 'date-fns'; // Import date-fns functions
+import { isValid, startOfMinute } from 'date-fns';
 
 function getTodayDateString() {
   const today = new Date();
@@ -27,36 +27,59 @@ function getTodayDateString() {
 }
 
 /**
- * Helper function to calculate total work minutes from check-in, check-out, and breaks.
+ * Calculates regular, night, and total work minutes from check-in, check-out, and breaks.
+ * Night hours are considered from 22:00 to 05:00.
  * @param checkIn The check-in timestamp.
  * @param checkOut The check-out timestamp (can be null if still working).
  * @param breaks An array of break records.
- * @returns The total work minutes, or 0 if calculation is not possible.
+ * @returns An object with regular, night, and total work minutes.
  */
-function calculateTotalWorkMinutes(checkIn: Timestamp | undefined, checkOut: Timestamp | null | undefined, breaks: Attendance['breaks']): number {
-  if (!checkIn || !checkOut) return 0;
+function calculateWorkMinutes(
+  checkIn: Timestamp | undefined,
+  checkOut: Timestamp | null | undefined,
+  breaks: Attendance['breaks']
+): { regularWorkMinutes: number; nightWorkMinutes: number; totalWorkMinutes: number } {
+  if (!checkIn || !checkOut) return { regularWorkMinutes: 0, nightWorkMinutes: 0, totalWorkMinutes: 0 };
 
   const checkInDate = checkIn.toDate();
   const checkOutDate = checkOut.toDate();
 
-  if (!isValid(checkInDate) || !isValid(checkOutDate)) return 0;
+  if (!isValid(checkInDate) || !isValid(checkOutDate)) return { regularWorkMinutes: 0, nightWorkMinutes: 0, totalWorkMinutes: 0 };
 
-  let totalSeconds = differenceInSeconds(checkOutDate, checkInDate);
+  let regularMinutes = 0;
+  let nightMinutes = 0;
 
-  // Subtract break seconds
-  breaks.forEach(_break => {
-    if (_break.start && _break.end) {
-      const breakStartDate = _break.start.toDate();
-      const breakEndDate = _break.end.toDate();
-      if (isValid(breakStartDate) && isValid(breakEndDate)) {
-        totalSeconds -= differenceInSeconds(breakEndDate, breakStartDate);
+  let currentMinute = startOfMinute(checkInDate);
+
+  while (currentMinute < checkOutDate) {
+    const nextMinute = new Date(currentMinute.getTime() + 60000);
+
+    const isBreak = breaks.some(_break => {
+      if (!_break.start || !_break.end) return false;
+      const breakStart = _break.start.toDate();
+      const breakEnd = _break.end.toDate();
+      return currentMinute >= breakStart && currentMinute < breakEnd;
+    });
+
+    if (!isBreak) {
+      const hour = currentMinute.getHours();
+      // Night hours are 22, 23, 0, 1, 2, 3, 4
+      if (hour >= 22 || hour < 5) {
+        nightMinutes++;
+      } else {
+        regularMinutes++;
       }
     }
-  });
+    currentMinute = nextMinute;
+  }
 
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  return totalMinutes > 0 ? totalMinutes : 0; // Ensure non-negative total
+  return {
+    regularWorkMinutes: regularMinutes,
+    nightWorkMinutes: nightMinutes,
+    totalWorkMinutes: regularMinutes + nightMinutes,
+  };
 }
+
 
 /**
  * Finds the most recent, open (not clocked-out) attendance record for a user.
@@ -103,6 +126,8 @@ export async function clockIn(userId: string, userName: string): Promise<void> {
     checkOut: null,
     breaks: [],
     isModified: false,
+    regularWorkMinutes: 0,
+    nightWorkMinutes: 0,
     totalWorkMinutes: 0,
   });
 }
@@ -129,12 +154,88 @@ export async function clockOut(userId: string): Promise<void> {
     throw new Error("Clock-in record not found while trying to clock out.");
   }
   const record = docSnap.data() as Attendance;
+  
+  // Ensure any open break is closed before clocking out
+  const openBreakIndex = record.breaks.findIndex(_break => _break.end === null);
+  if (openBreakIndex !== -1) {
+    record.breaks[openBreakIndex].end = checkOutTime;
+  }
 
-  const totalMinutes = calculateTotalWorkMinutes(record.checkIn, checkOutTime, record.breaks);
+  const workMinutes = calculateWorkMinutes(record.checkIn, checkOutTime, record.breaks);
 
   await updateDoc(attendanceDocRef, {
     checkOut: checkOutTime,
-    totalWorkMinutes: totalMinutes,
+    breaks: record.breaks, // Save the potentially updated breaks array
+    ...workMinutes,
+  });
+}
+
+/**
+ * Starts a break for a user.
+ * @param userId The ID of the user starting a break.
+ * @returns Promise<void>
+ * @throws Will throw an error if the user is not clocked in or is already on a break.
+ */
+export async function startBreak(userId: string): Promise<void> {
+  const openAttendanceId = await getOpenAttendanceRecordId(userId);
+
+  if (!openAttendanceId) {
+    throw new Error('User is not clocked in. Cannot start a break.');
+  }
+
+  const attendanceDocRef = doc(db, 'attendance', openAttendanceId);
+  const docSnap = await getDoc(attendanceDocRef);
+
+  if (!docSnap.exists()) {
+    throw new Error('Attendance record not found.');
+  }
+
+  const record = docSnap.data() as Attendance;
+  const openBreak = record.breaks.find(_break => _break.end === null);
+
+  if (openBreak) {
+    throw new Error('User is already on a break.');
+  }
+
+  const newBreaks = [...record.breaks, { start: Timestamp.now(), end: null }];
+
+  await updateDoc(attendanceDocRef, {
+    breaks: newBreaks,
+  });
+}
+
+/**
+ * Ends a break for a user.
+ * @param userId The ID of the user ending a break.
+ * @returns Promise<void>
+ * @throws Will throw an error if the user is not clocked in or not on a break.
+ */
+export async function endBreak(userId: string): Promise<void> {
+  const openAttendanceId = await getOpenAttendanceRecordId(userId);
+
+  if (!openAttendanceId) {
+    throw new Error('User is not clocked in. Cannot end a break.');
+  }
+
+  const attendanceDocRef = doc(db, 'attendance', openAttendanceId);
+  const docSnap = await getDoc(attendanceDocRef);
+
+  if (!docSnap.exists()) {
+    throw new Error('Attendance record not found.');
+  }
+
+  const record = docSnap.data() as Attendance;
+  const openBreakIndex = record.breaks.findIndex(_break => _break.end === null);
+
+  if (openBreakIndex === -1) {
+    throw new Error('User is not on a break.');
+  }
+
+  const updatedBreaks = [...record.breaks];
+  updatedBreaks[openBreakIndex].end = Timestamp.now();
+
+  await updateDoc(attendanceDocRef, {
+    breaks: updatedBreaks,
   });
 }
 
@@ -148,34 +249,33 @@ export async function updateAttendanceRecord(recordId: string, updatedFields: Pa
   try {
     const attendanceDocRef = doc(db, 'attendance', recordId);
 
-    // Fetch current record to re-calculate totalWorkMinutes if needed
     const docSnap = await getDoc(attendanceDocRef);
     if (!docSnap.exists()) {
       throw new Error('Attendance record not found.');
     }
     const currentRecord = docSnap.data() as Attendance;
 
-    // Use updated fields or current record's values
     const newCheckIn = updatedFields.checkIn || currentRecord.checkIn;
     const newCheckOut = updatedFields.checkOut || currentRecord.checkOut;
     const newBreaks = updatedFields.breaks || currentRecord.breaks;
 
-    let newTotalWorkMinutes = currentRecord.totalWorkMinutes;
+    let workMinutes = {
+      regularWorkMinutes: currentRecord.regularWorkMinutes,
+      nightWorkMinutes: currentRecord.nightWorkMinutes,
+      totalWorkMinutes: currentRecord.totalWorkMinutes,
+    };
 
-    // Recalculate totalWorkMinutes if relevant fields are updated
     if (updatedFields.checkIn || updatedFields.checkOut || updatedFields.breaks) {
-      // Ensure Timestamp objects are used for calculation
-      // If the updatedFields have checkIn/Out as Date, convert them to Timestamp
       const calculatedCheckIn = newCheckIn instanceof Timestamp ? newCheckIn : Timestamp.fromDate(newCheckIn as Date);
       const calculatedCheckOut = newCheckOut instanceof Timestamp ? newCheckOut : (newCheckOut ? Timestamp.fromDate(newCheckOut as Date) : null);
 
-      newTotalWorkMinutes = calculateTotalWorkMinutes(calculatedCheckIn, calculatedCheckOut, newBreaks);
+      workMinutes = calculateWorkMinutes(calculatedCheckIn, calculatedCheckOut, newBreaks);
     }
 
     await updateDoc(attendanceDocRef, {
       ...updatedFields,
-      totalWorkMinutes: newTotalWorkMinutes,
-      isModified: true, // Mark as modified by admin
+      ...workMinutes,
+      isModified: true,
     });
   } catch (error) {
     console.error("Error updating attendance record: ", error);
@@ -185,15 +285,13 @@ export async function updateAttendanceRecord(recordId: string, updatedFields: Pa
 
 /**
  * Manually adds a new attendance record for a user.
- * This is primarily for admin use to correct or add missed entries.
  * @param newRecordData Object containing userId, userName, date (YYYY-MM-DD), checkIn (Date), checkOut (Date or null).
  * @returns Promise<void>
- * @throws Will throw an error if checkIn is missing or invalid.
  */
 export async function addAttendanceRecord(newRecordData: {
   userId: string;
   userName: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   checkIn: Date;
   checkOut: Date | null;
   breaks?: Attendance['breaks'];
@@ -207,7 +305,7 @@ export async function addAttendanceRecord(newRecordData: {
   const checkInTimestamp = Timestamp.fromDate(checkIn);
   const checkOutTimestamp = checkOut ? Timestamp.fromDate(checkOut) : null;
 
-  const totalWorkMinutes = calculateTotalWorkMinutes(checkInTimestamp, checkOutTimestamp, breaks);
+  const workMinutes = calculateWorkMinutes(checkInTimestamp, checkOutTimestamp, breaks);
 
   try {
     const attendanceCol = collection(db, 'attendance');
@@ -218,8 +316,8 @@ export async function addAttendanceRecord(newRecordData: {
       checkIn: checkInTimestamp,
       checkOut: checkOutTimestamp,
       breaks,
-      isModified: true, // Manually added records are considered modified by admin
-      totalWorkMinutes,
+      isModified: true,
+      ...workMinutes,
     });
   } catch (error) {
     console.error("Error adding attendance record: ", error);
@@ -230,8 +328,6 @@ export async function addAttendanceRecord(newRecordData: {
 
 /**
  * Fetches all attendance records relevant for the dashboard view.
- * This includes shifts that started today AND currently open shifts (overnight).
- * For each user, it returns the most recent relevant shift.
  * @returns Promise<Attendance[]> An array of relevant attendance records, one per user.
  */
 export async function getRelevantAttendanceRecordsForDashboard(): Promise<Attendance[]> {
@@ -239,24 +335,19 @@ export async function getRelevantAttendanceRecordsForDashboard(): Promise<Attend
     const todayStr = getTodayDateString();
     const attendanceCol = collection(db, 'attendance');
 
-    // Query 1: Shifts that started today (date field is today's date)
     const qTodayStarted = query(attendanceCol, where('date', '==', todayStr));
     const todayStartedSnapshot = await getDocs(qTodayStarted);
 
-    // Query 2: Currently open shifts (checkOut is null)
     const qOpenSessions = query(attendanceCol, where('checkOut', '==', null));
     const openSessionsSnapshot = await getDocs(qOpenSessions);
 
     const allRelevantRecords: Attendance[] = [];
-
     todayStartedSnapshot.forEach(doc => allRelevantRecords.push({ id: doc.id, ...doc.data() } as Attendance));
     openSessionsSnapshot.forEach(doc => allRelevantRecords.push({ id: doc.id, ...doc.data() } as Attendance));
 
-    // Consolidate records by userId, taking the most recent one if multiple exist
     const consolidatedRecords = new Map<string, Attendance>();
     allRelevantRecords.forEach(record => {
       const existing = consolidatedRecords.get(record.userId);
-      // If no record exists for this user, or if the current record is more recent, add/replace it
       if (!existing || record.checkIn.toMillis() > existing.checkIn.toMillis()) {
         consolidatedRecords.set(record.userId, record);
       }
@@ -272,28 +363,23 @@ export async function getRelevantAttendanceRecordsForDashboard(): Promise<Attend
 /**
  * Fetches monthly attendance records for a specific user.
  * @param userId The ID of the user.
- * @param year The year for which to fetch records (e.g., 2026).
+ * @param year The year for which to fetch records.
  * @param month The month for which to fetch records (1-12).
  * @returns Promise<Attendance[]> An array of attendance records for the specified month.
  */
 export async function getMonthlyAttendance(userId: string, year: number, month: number): Promise<Attendance[]> {
   try {
     const attendanceCol = collection(db, 'attendance');
-
-    // Calculate start and end date strings for the month
-    const startDate = new Date(year, month - 1, 1); // Month is 0-indexed in Date object
-    const endDate = new Date(year, month, 0); // Last day of the month
-    
     const startOfMonthStr = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endOfMonthStr = `${year}-${String(month).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+    const endOfMonthStr = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
 
     const q = query(
       attendanceCol,
       where('userId', '==', userId),
       where('date', '>=', startOfMonthStr),
       where('date', '<=', endOfMonthStr),
-      orderBy('date', 'asc'), // Order by date for chronological display
-      orderBy('checkIn', 'asc') // Then by checkIn time
+      orderBy('date', 'asc'),
+      orderBy('checkIn', 'asc')
     );
 
     const querySnapshot = await getDocs(q);
@@ -316,7 +402,7 @@ export async function getMonthlyAttendance(userId: string, year: number, month: 
 export async function getAllAttendanceRecords(): Promise<Attendance[]> {
   try {
     const attendanceCol = collection(db, 'attendance');
-    const q = query(attendanceCol, orderBy('date', 'desc'), orderBy('checkIn', 'desc')); // Order by date then checkIn for chronological view
+    const q = query(attendanceCol, orderBy('date', 'desc'), orderBy('checkIn', 'desc'));
     const querySnapshot = await getDocs(q);
     
     const allRecords: Attendance[] = [];
@@ -336,20 +422,20 @@ export async function getAllAttendanceRecords(): Promise<Attendance[]> {
  * @param userId Optional. The ID of the user to filter by.
  * @param startDateStr The start date of the period (YYYY-MM-DD).
  * @param endDateStr The end date of the period (YYYY-MM-DD).
- * @returns Promise<Map<string, { userName: string, totalWorkMinutes: number }>> Aggregated data per user.
+ * @returns Aggregated data per user including regular, night, and total minutes.
  */
 export async function getAggregatedAttendance(
   userId: string | null,
   startDateStr: string,
   endDateStr: string
-): Promise<Map<string, { userName: string; totalWorkMinutes: number }>> {
+): Promise<Map<string, { userName: string; regularWorkMinutes: number; nightWorkMinutes: number; totalWorkMinutes: number }>> {
   try {
     const attendanceCol = collection(db, 'attendance');
     let q: Query<DocumentData> = query(
       attendanceCol,
       where('date', '>=', startDateStr),
       where('date', '<=', endDateStr),
-      orderBy('date', 'asc') // Need this for range queries
+      orderBy('date', 'asc')
     );
 
     if (userId) {
@@ -357,12 +443,19 @@ export async function getAggregatedAttendance(
     }
 
     const querySnapshot = await getDocs(q);
-    const aggregatedData = new Map<string, { userName: string; totalWorkMinutes: number }>();
+    const aggregatedData = new Map<string, { userName: string; regularWorkMinutes: number; nightWorkMinutes: number; totalWorkMinutes: number }>();
 
     querySnapshot.forEach((docSnap) => {
       const record = docSnap.data() as Attendance;
-      const current = aggregatedData.get(record.userId) || { userName: record.userName, totalWorkMinutes: 0 };
-      current.totalWorkMinutes += record.totalWorkMinutes;
+      const current = aggregatedData.get(record.userId) || {
+        userName: record.userName,
+        regularWorkMinutes: 0,
+        nightWorkMinutes: 0,
+        totalWorkMinutes: 0,
+      };
+      current.regularWorkMinutes += record.regularWorkMinutes || 0;
+      current.nightWorkMinutes += record.nightWorkMinutes || 0;
+      current.totalWorkMinutes += record.totalWorkMinutes || 0;
       aggregatedData.set(record.userId, current);
     });
 
