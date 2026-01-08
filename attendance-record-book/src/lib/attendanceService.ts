@@ -62,10 +62,10 @@ function calculateWorkMinutes(
     });
 
     if (!isBreak) {
-      // Use UTC hours so calculations stay consistent across server/timezone differences.
-      const hour = currentMinute.getUTCHours();
+      // Evaluate night hours in KST (UTC+9) to match Korean labor rules.
+      const kstHour = (currentMinute.getUTCHours() + 9) % 24;
       // Night hours are 22, 23, 0, 1, 2, 3, 4
-      if (hour >= 22 || hour < 5) {
+      if (kstHour >= 22 || kstHour < 5) {
         nightMinutes++;
       } else {
         regularMinutes++;

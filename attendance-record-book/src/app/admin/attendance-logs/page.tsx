@@ -176,13 +176,10 @@ function AdminAttendanceLogsContent() {
 
     // 1. Get all unique dates and employees from the filtered records
     const uniqueDates = Array.from(new Set(filteredRecords.map(record => record.date))).sort();
-    const uniqueEmployees = Array.from(new Set(employees.map(emp => emp.name))).sort(); // Use all employee names for columns
+    const uniqueEmployees = Array.from(new Set(employees.map(emp => emp.name))).sort();
 
-    // 2. Prepare the header row
-    const header = ['날짜'];
-    uniqueEmployees.forEach(empName => {
-      header.push(`${empName} (출근)`, `${empName} (퇴근)`, `${empName} (근무)`);
-    });
+    // 2. Prepare the header row (날짜 | 이름1 | 이름2 | ...)
+    const header = ['날짜', ...uniqueEmployees];
 
     // 3. Prepare the data rows
     const dataRows: any[] = [];
@@ -194,25 +191,27 @@ function AdminAttendanceLogsContent() {
         );
 
         if (employeeRecordsForDate.length > 0) {
-          // Concatenate all records for the day for that employee
-          const checkIns = employeeRecordsForDate.map(r => r.checkIn ? new Date(r.checkIn.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-').join(', ');
-          const checkOuts = employeeRecordsForDate.map(r => r.checkOut ? new Date(r.checkOut.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '근무 중').join(', ');
-          const workTimes = employeeRecordsForDate.map(r => formatMinutes(r.totalWorkMinutes)).join(', ');
-          
-          row[`${empName} (출근)`] = checkIns;
-          row[`${empName} (퇴근)`] = checkOuts;
-          row[`${empName} (근무)`] = workTimes;
+          // Concatenate all records for the day (출근/퇴근 근무시간)
+          const recordStrings = employeeRecordsForDate.map(r => {
+            const checkIn = r.checkIn ? new Date(r.checkIn.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '-';
+            const checkOut = r.checkOut ? new Date(r.checkOut.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '근무중';
+            const workTime = formatMinutes(r.totalWorkMinutes);
+            return `${checkIn}/${checkOut} (${workTime})`;
+          }).join('\n');
+          row[empName] = recordStrings;
         } else {
-          // Fill with empty if no record for that employee on that date
-          row[`${empName} (출근)`] = '';
-          row[`${empName} (퇴근)`] = '';
-          row[`${empName} (근무)`] = '';
+          row[empName] = '';
         }
       });
       dataRows.push(row);
     });
 
     const worksheet = utils.json_to_sheet(dataRows, { header: header });
+    // Set column widths
+    worksheet['!cols'] = [
+      { wch: 12 }, // 날짜 column
+      ...uniqueEmployees.map(() => ({ wch: 20 })) // Employee columns
+    ];
     const workbook = utils.book_new();
     utils.book_append_sheet(workbook, worksheet, `${filters.year}년 ${filters.month}월`);
     writeFile(workbook, `${filters.year}_${filters.month}_출퇴근_기록.xlsx`);

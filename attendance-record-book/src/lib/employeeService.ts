@@ -79,11 +79,6 @@ export async function reactivateEmployee(branchId: string, uid: string): Promise
  * @returns Promise<void>
  */
 export async function updateEmployeeRate(branchId: string, uid: string, newRate: number): Promise<void> {
-  const minWage = parseFloat(process.env.NEXT_PUBLIC_MINIMUM_WAGE || '0');
-  if (newRate < minWage) {
-    throw new Error(`시급은 최저시급(${minWage.toLocaleString()}원) 이상이어야 합니다.`);
-  }
-  
   try {
     const employeeRef = doc(db, 'users', uid);
     await updateDoc(employeeRef, {

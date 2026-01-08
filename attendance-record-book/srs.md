@@ -7,9 +7,9 @@
 
 ## 2. 기술 스택
 
-* **Frontend**: Next.js 14 (App Router), Tailwind CSS, Zustand (상태 관리).
+* **Frontend**: Next.js 16 (App Router), React 19, Tailwind CSS.
 * **Backend/DB**: Firebase Authentication, Firestore (NoSQL).
-* **Library**: `xlsx` (Excel Export용), `date-fns` (시간 계산용).
+* **Library**: `xlsx` (Excel Export용), `date-fns` (시간 계산용), Vitest (유닛 테스트).
 
 ## 3. 기능 요구사항
 
@@ -64,17 +64,13 @@
 
 
 #### [P1] 직원 및 데이터 관리
+  role: "admin" | "staff";
 
 
 
-*   **지점 관리**:
-*   신규 지점 등록 (지점명 설정).
-*   기존 지점 목록 조회, 수정, 삭제.
-*   **지점 전환 기능**: 관리자는 드롭다운 등을 통해 여러 지점의 데이터를 손쉽게 전환하며 조회 및 관리 가능.
+  hourlyRate: number;     // 시급 (공개 등록은 기본 0으로 생성, 관리자 화면에서 후속 수정)
 
-*   **직원 관리**:
-
-*   신규 직원 등록 (이름, 시급, PIN 설정 등).
+*   신규 직원 등록 (이름, 시급 설정). **PIN은 더 이상 사용하지 않음.**
 
 *   직원 퇴사 처리 (데이터 보존을 위한 **Soft Delete** 방식 사용, `isActive: false` 처리).
 
@@ -97,6 +93,8 @@
 *   **자동 급여 계산**: 각 직원의 시급(hourlyRate)과 총 근무 시간을 바탕으로 예상 급여를 자동 계산하여 표시.
 
 *   정산 데이터를 **Excel(.xlsx)** 파일로 추출.
+
+*   **공개 직원 등록 페이지**(`/add-employee`): 지점 선택 후 이름만 입력해 신규 직원을 추가할 수 있으며 기본값으로 `role=staff`, `hourlyRate=0`이 설정된다.
 
 
 
@@ -121,6 +119,8 @@
 
 
 *   **관리자 권한**: 사장님은 외부 기기에서도 로그인하여 관리자 페이지 접근 가능.
+*   **세션 안전장치**: 관리자 영역(`/admin`)을 벗어나면 자동 로그아웃 처리하여 장시간 세션 노출을 방지.
+*   **클라이언트 지점 선택 저장**: 선택한 지점 ID는 로컬스토리지에 저장되어 재방문 시 자동 복원.
 
 
 
@@ -480,7 +480,7 @@
 
 
 
-  nightWorkMinutes: number;   // 야간 근무 시간 (분, 22:00-05:00)
+  nightWorkMinutes: number;   // 야간 근무 시간 (분, 22:00-05:00, KST 기준 계산)
 
 
 

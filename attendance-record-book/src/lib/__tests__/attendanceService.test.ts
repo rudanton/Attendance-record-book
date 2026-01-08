@@ -15,8 +15,8 @@ const makeTs = (iso: string) => Timestamp.fromDate(new Date(iso));
 
 describe('calculateWorkMinutes', () => {
   it('handles overnight night shift (22:00 -> 10:00 next day) with no breaks', () => {
-    const checkIn = makeTs('2026-01-01T22:00:00Z');
-    const checkOut = makeTs('2026-01-02T10:00:00Z');
+    const checkIn = makeTs('2026-01-01T22:00:00+09:00');
+    const checkOut = makeTs('2026-01-02T10:00:00+09:00');
 
     const result = calculateWorkMinutes(checkIn, checkOut, []);
 
@@ -26,8 +26,8 @@ describe('calculateWorkMinutes', () => {
   });
 
   it('handles long shift with late checkout (10:00 -> 00:00 next day) with no breaks', () => {
-    const checkIn = makeTs('2026-01-01T10:00:00Z');
-    const checkOut = makeTs('2026-01-02T00:00:00Z');
+    const checkIn = makeTs('2026-01-01T10:00:00+09:00');
+    const checkOut = makeTs('2026-01-02T00:00:00+09:00');
 
     const result = calculateWorkMinutes(checkIn, checkOut, []);
 
