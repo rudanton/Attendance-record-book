@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback } from 'react';
-import { Branch } from '@/lib/types';
+import { useRouter } from 'next/navigation';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '@/firebase/config';
+import { Branch, User } from '@/lib/types';
 import { getAllBranches, addBranch, updateBranch, deleteBranch } from '@/lib/branchService';
-import AdminRouteGuard from '@/components/admin/AdminRouteGuard';
 import Link from 'next/link';
 
 function ManageBranchesPageContent() {
@@ -12,23 +15,76 @@ function ManageBranchesPageContent() {
   const [newBranchName, setNewBranchName] = useState('');
   const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
   const [editingBranchName, setEditingBranchName] = useState('');
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const router = useRouter();
 
   const fetchBranches = useCallback(async () => {
     setLoading(true);
     try {
       const fetchedBranches = await getAllBranches();
       setBranches(fetchedBranches);
+      return fetchedBranches;
     } catch (error) {
       console.error("Failed to fetch branches:", error);
       alert("지점 목록을 불러올 수 없습니다.");
+      return [];
     } finally {
       setLoading(false);
     }
   }, []);
 
+  // Check authorization: if no branchId in localStorage, allow access; otherwise require admin
   useEffect(() => {
-    fetchBranches();
-  }, [fetchBranches]);
+    const checkAuth = async () => {
+      const storedBranchId = localStorage.getItem('branchId');
+      
+      // If no branchId in localStorage, skip auth check
+      if (!storedBranchId) {
+        setIsAuthorized(true);
+        setLoadingUser(false);
+        await fetchBranches();
+        return;
+      }
+
+      // If branchId exists, check admin role
+      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        if (!firebaseUser) {
+          router.push('/admin/login');
+          return;
+        }
+
+        try {
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
+
+          if (userDocSnap.exists()) {
+            const user = userDocSnap.data() as User;
+            if (user.role === 'admin') {
+              setIsAuthorized(true);
+            } else {
+              alert('관리자 권한이 없습니다.');
+              router.push('/');
+            }
+          } else {
+            alert('사용자 정보를 찾을 수 없습니다.');
+            router.push('/admin/login');
+          }
+        } catch (error) {
+          console.error("Error checking user role:", error);
+          alert('사용자 권한 확인 중 오류가 발생했습니다.');
+          router.push('/admin/login');
+        }
+        setLoadingUser(false);
+      });
+
+      await fetchBranches();
+
+      return () => unsubscribe();
+    };
+
+    checkAuth();
+  }, [fetchBranches, router]);
 
   const handleAddBranch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,7 +141,16 @@ function ManageBranchesPageContent() {
 
   return (
     <main className="flex min-h-screen flex-col items-center p-12 bg-gray-100 text-gray-800">
-      <div className="w-full max-w-4xl">
+      {loadingUser ? (
+        <div className="flex items-center justify-center">
+          <p>권한 확인 중...</p>
+        </div>
+      ) : !isAuthorized ? (
+        <div className="flex items-center justify-center">
+          <p>접근 권한이 없습니다.</p>
+        </div>
+      ) : (
+        <div className="w-full max-w-4xl">
         <div className="flex justify-start items-center mb-8">
             <Link href="/admin" className="text-blue-600 hover:text-blue-800">
                 ← 관리자 메뉴로 돌아가기
@@ -166,15 +231,12 @@ function ManageBranchesPageContent() {
             </table>
           )}
         </div>
-      </div>
-    </main>
+        </div>
+      )}
+      </main>
   );
 }
 
 export default function ManageBranchesPage() {
-  return (
-    <AdminRouteGuard>
-      <ManageBranchesPageContent />
-    </AdminRouteGuard>
-  );
+  return <ManageBranchesPageContent />;
 }

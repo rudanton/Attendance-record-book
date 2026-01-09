@@ -31,13 +31,16 @@ export async function addBranch(branchName: string): Promise<Branch> {
   const branchesCol = collection(db, 'branches');
   const branchId = uuidv4(); // Generate a unique ID for the branch
   const docRef = await addDoc(branchesCol, { branchId, branchName });
-  await logAudit({
+  
+  // Log audit asynchronously without blocking branch creation
+  logAudit({
     branchId,
     resourceType: 'branch',
     resourceId: docRef.id,
     action: 'create',
     changes: buildChanges({}, { branchId, branchName }),
-  });
+  }).catch(error => console.error("Failed to log audit for branch creation:", error));
+  
   return { id: docRef.id, branchId, branchName };
 }
 
@@ -55,13 +58,15 @@ export async function updateBranch(id: string, branchId: string, newBranchName: 
   const branchDoc = doc(db, 'branches', id);
   const updates = { branchName: newBranchName };
   await updateDoc(branchDoc, updates);
-  await logAudit({
+  
+  // Log audit asynchronously without blocking branch update
+  logAudit({
     branchId,
     resourceType: 'branch',
     resourceId: id,
     action: 'update',
     changes: buildChanges({}, updates),
-  });
+  }).catch(error => console.error("Failed to log audit for branch update:", error));
 }
 
 /**
@@ -70,13 +75,20 @@ export async function updateBranch(id: string, branchId: string, newBranchName: 
  * @returns Promise<void>
  */
 export async function deleteBranch(id: string): Promise<void> {
-  const branchDoc = doc(db, 'branches', id);
-  await deleteDoc(branchDoc);
-  await logAudit({
-    branchId: id, // No branchId field in doc, use id reference
-    resourceType: 'branch',
-    resourceId: id,
-    action: 'delete',
-    changes: buildChanges({}, {}),
-  });
+  try {
+    const branchDoc = doc(db, 'branches', id);
+    await deleteDoc(branchDoc);
+    
+    // Log audit asynchronously without blocking deletion
+    logAudit({
+      branchId: id,
+      resourceType: 'branch',
+      resourceId: id,
+      action: 'delete',
+      changes: buildChanges({}, {}),
+    }).catch(error => console.error("Failed to log audit for branch deletion:", error));
+  } catch (error) {
+    console.error("Error deleting branch:", error);
+    throw new Error("지점을 삭제할 수 없습니다.");
+  }
 }
