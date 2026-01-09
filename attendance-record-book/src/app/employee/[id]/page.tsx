@@ -278,34 +278,6 @@ export default function EmployeeDetailPage() {
     existingBreaks.splice(breakIndex, 1);
     setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
   };
-    }
-
-    // Append a synthetic break right before checkout
-    const checkOutDate = checkOutTs.toDate();
-    
-    // Check if the work period is valid (checkout should be after checkin)
-    if (checkOutDate <= checkInDate) {
-      alert('출근과 퇴근 시간이 같거나 역순입니다.');
-      return;
-    }
-    
-    const totalWorkMinutes = Math.floor((checkOutDate.getTime() - checkInDate.getTime()) / 60000);
-    
-    // Calculate the break start time (missing minutes before checkout)
-    let startDate = new Date(checkOutDate.getTime() - missing * 60000);
-
-    // If start date goes before check-in, cap it at check-in time
-    if (startDate < checkInDate) {
-      startDate = checkInDate;
-    }
-
-    const newBreak = { start: Timestamp.fromDate(startDate), end: Timestamp.fromDate(checkOutDate) } as Attendance['breaks'][number];
-
-    setEditingFormData(prev => ({
-      ...prev,
-      breaks: [...existingBreaks, newBreak],
-    }));
-  };
 
   // Generate year options
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i); // Current year +/- 2
@@ -331,27 +303,27 @@ export default function EmployeeDetailPage() {
         <button onClick={goToNextMonth} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">다음 달</button>
       </div>
 
-      <div className="w-full max-w-4xl bg-white rounded-lg shadow-md overflow-hidden">
+      <div className="w-full max-w-7xl bg-white rounded-lg shadow-md overflow-x-auto">
         {loading ? (
           <p className="p-6 text-center">월별 기록을 불러오는 중...</p>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">날짜</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">출근 시간</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">퇴근 시간</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">휴식 시간</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">총 근무 시간</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">작업</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">날짜</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">출근 시간</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">퇴근 시간</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-80">휴식 시간</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">총 근무 시간</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">작업</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {attendanceRecords.length > 0 ? (
                 attendanceRecords.map((record) => (
                   <tr key={record.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{record.date}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{record.date}</td>
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                       {editingRecordId === record.id ? (
                         <input
                           type="time"
@@ -365,9 +337,9 @@ export default function EmployeeDetailPage() {
                         record.checkIn ? new Date(record.checkIn.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '-'
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-4 py-4 text-sm text-gray-500">
                       {editingRecordId === record.id ? (
-                        <div className="flex items-center space-x-2">
+                        <div className="space-y-2">
                           <input
                             type="time"
                             name="checkOut"
@@ -376,34 +348,29 @@ export default function EmployeeDetailPage() {
                             className="p-2 border rounded-md w-32 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
                             placeholder="HH:mm"
                           />
-                          <button
-                            type="button"
-                            onClick={handleAdd30Minutes}
-                            className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded"
-                          >
-                            +30분
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleEnsureMinimumBreak(60)}
-                            className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs rounded"
-                            title="법정 최소 휴게 60분을 맞추기 위해 퇴근 직전에 부족한 휴게를 채웁니다."
-                          >
-                            휴게 1시간 맞추기
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSaveEdit(record.id)}
-                            className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded"
-                          >
-                            저장
-                          </button>
+                          <div className="flex items-center space-x-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={handleAdd30Minutes}
+                              className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded"
+                            >
+                              +30분
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleEnsureMinimumBreak(60)}
+                              className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs rounded"
+                              title="법정 최소 휴게 60분을 맞추기 위해 퇴근 직전에 부족한 휴게를 채웁니다."
+                            >
+                              휴게 1시간 맞추기
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         record.checkOut ? new Date(record.checkOut.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '근무 중'
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">
+                    <td className="px-6 py-4 text-sm text-gray-500 w-80">
                       {editingRecordId === record.id ? (
                         <div className="space-y-2">
                           {((editingFormData.breaks || record.breaks || []) as Attendance['breaks']).map((b, index) => (
@@ -456,10 +423,10 @@ export default function EmployeeDetailPage() {
                         : '-'
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                       {record.totalWorkMinutes > 0 ? `${Math.floor(record.totalWorkMinutes / 60)}시간 ${record.totalWorkMinutes % 60}분` : '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+                    <td className="px-4 py-4 whitespace-nowrap text-center text-sm font-medium">
                       {editingRecordId === record.id ? (
                         <>
                           <button onClick={() => handleSaveEdit(record.id)} className="text-green-600 hover:text-green-900 mr-4">저장</button>
