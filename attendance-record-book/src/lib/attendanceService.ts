@@ -376,14 +376,15 @@ export async function updateAttendanceRecord(branchId: string, recordId: string,
 
     await updateDoc(attendanceDocRef, afterUpdates);
 
+    // Log audit asynchronously without blocking attendance update
     if (Object.keys(changes).length > 0) {
-      await logAudit({
+      logAudit({
         branchId,
         resourceType: 'attendance',
         resourceId: recordId,
         action: 'update',
         changes,
-      });
+      }).catch(error => console.error("Failed to log audit for attendance update:", error));
     }
   } catch (error) {
     console.error("Error updating attendance record: ", error);
@@ -463,7 +464,9 @@ export async function addAttendanceRecord(branchId: string, newRecordData: {
       isModified: true,
       ...workMinutes,
     });
-    await logAudit({
+    
+    // Log audit asynchronously without blocking attendance creation
+    logAudit({
       branchId,
       resourceType: 'attendance',
       resourceId: userId,
@@ -476,7 +479,7 @@ export async function addAttendanceRecord(branchId: string, newRecordData: {
         isModified: true,
         ...workMinutes,
       }),
-    });
+    }).catch(error => console.error("Failed to log audit for attendance creation:", error));
   } catch (error) {
     console.error("Error adding attendance record: ", error);
     throw new Error("Failed to add attendance record.");

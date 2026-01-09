@@ -47,13 +47,15 @@ export async function deleteEmployee(branchId: string, uid: string): Promise<voi
     const employeeRef = doc(db, 'users', uid);
     const updates = { isActive: false };
     await updateDoc(employeeRef, updates);
-    await logAudit({
+    
+    // Log audit asynchronously without blocking employee deactivation
+    logAudit({
       branchId,
       resourceType: 'user',
       resourceId: uid,
       action: 'deactivate',
       changes: buildChanges({}, updates),
-    });
+    }).catch(error => console.error("Failed to log audit for employee deactivation:", error));
   } catch (error) {
     console.error("Error soft deleting employee: ", error);
     throw new Error("Failed to soft delete employee.");
@@ -71,13 +73,15 @@ export async function reactivateEmployee(branchId: string, uid: string): Promise
     const employeeRef = doc(db, 'users', uid);
     const updates = { isActive: true };
     await updateDoc(employeeRef, updates);
-    await logAudit({
+    
+    // Log audit asynchronously without blocking employee reactivation
+    logAudit({
       branchId,
       resourceType: 'user',
       resourceId: uid,
       action: 'reactivate',
       changes: buildChanges({}, updates),
-    });
+    }).catch(error => console.error("Failed to log audit for employee reactivation:", error));
   } catch (error) {
     console.error("Error reactivating employee: ", error);
     throw new Error("Failed to reactivate employee.");
@@ -96,13 +100,15 @@ export async function updateEmployeeRate(branchId: string, uid: string, newRate:
     const employeeRef = doc(db, 'users', uid);
     const updates = { hourlyRate: newRate };
     await updateDoc(employeeRef, updates);
-    await logAudit({
+    
+    // Log audit asynchronously without blocking rate update
+    logAudit({
       branchId,
       resourceType: 'user',
       resourceId: uid,
       action: 'update',
       changes: buildChanges({}, updates),
-    });
+    }).catch(error => console.error("Failed to log audit for employee rate update:", error));
   } catch (error) {
     console.error("Error updating employee's hourly rate: ", error);
     // Re-throw specific validation error
