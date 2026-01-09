@@ -16,6 +16,7 @@ import {
   DocumentData,
 } from 'firebase/firestore';
 import { Attendance } from './types';
+import { buildChanges, logAudit } from './auditLogService';
 import { isValid, startOfMinute } from 'date-fns';
 
 function getTodayDateString() {
@@ -365,11 +366,25 @@ export async function updateAttendanceRecord(branchId: string, recordId: string,
       workMinutes = calculateWorkMinutes(calculatedCheckIn, calculatedCheckOut, finalBreaks);
     }
 
-    await updateDoc(attendanceDocRef, {
+    const afterUpdates = {
       ...updatedFields,
       ...workMinutes,
       isModified: true,
-    });
+    } as Partial<Attendance>;
+
+    const changes = buildChanges(currentRecord as Record<string, any>, afterUpdates as Record<string, any>);
+
+    await updateDoc(attendanceDocRef, afterUpdates);
+
+    if (Object.keys(changes).length > 0) {
+      await logAudit({
+        branchId,
+        resourceType: 'attendance',
+        resourceId: recordId,
+        action: 'update',
+        changes,
+      });
+    }
   } catch (error) {
     console.error("Error updating attendance record: ", error);
     throw new Error("Failed to update attendance record.");
@@ -447,6 +462,20 @@ export async function addAttendanceRecord(branchId: string, newRecordData: {
       breaks: finalBreaks,
       isModified: true,
       ...workMinutes,
+    });
+    await logAudit({
+      branchId,
+      resourceType: 'attendance',
+      resourceId: userId,
+      action: 'create',
+      changes: buildChanges({}, {
+        userId, userName, date,
+        checkIn: checkInTimestamp,
+        checkOut: checkOutTimestamp,
+        breaks: finalBreaks,
+        isModified: true,
+        ...workMinutes,
+      }),
     });
   } catch (error) {
     console.error("Error adding attendance record: ", error);

@@ -1,5 +1,6 @@
 // src/lib/employeeService.ts
 import { db } from '@/firebase/config';
+import { logAudit, buildChanges } from './auditLogService';
 import { collection, addDoc, updateDoc, doc, Timestamp, query, where, getDocs } from 'firebase/firestore';
 import { User } from './types';
 
@@ -44,8 +45,14 @@ export async function addEmployee(branchId: string, employeeData: Omit<User, 'ui
 export async function deleteEmployee(branchId: string, uid: string): Promise<void> {
   try {
     const employeeRef = doc(db, 'users', uid);
-    await updateDoc(employeeRef, {
-      isActive: false
+    const updates = { isActive: false };
+    await updateDoc(employeeRef, updates);
+    await logAudit({
+      branchId,
+      resourceType: 'user',
+      resourceId: uid,
+      action: 'deactivate',
+      changes: buildChanges({}, updates),
     });
   } catch (error) {
     console.error("Error soft deleting employee: ", error);
@@ -62,8 +69,14 @@ export async function deleteEmployee(branchId: string, uid: string): Promise<voi
 export async function reactivateEmployee(branchId: string, uid: string): Promise<void> {
   try {
     const employeeRef = doc(db, 'users', uid);
-    await updateDoc(employeeRef, {
-      isActive: true
+    const updates = { isActive: true };
+    await updateDoc(employeeRef, updates);
+    await logAudit({
+      branchId,
+      resourceType: 'user',
+      resourceId: uid,
+      action: 'reactivate',
+      changes: buildChanges({}, updates),
     });
   } catch (error) {
     console.error("Error reactivating employee: ", error);
@@ -81,8 +94,14 @@ export async function reactivateEmployee(branchId: string, uid: string): Promise
 export async function updateEmployeeRate(branchId: string, uid: string, newRate: number): Promise<void> {
   try {
     const employeeRef = doc(db, 'users', uid);
-    await updateDoc(employeeRef, {
-      hourlyRate: newRate
+    const updates = { hourlyRate: newRate };
+    await updateDoc(employeeRef, updates);
+    await logAudit({
+      branchId,
+      resourceType: 'user',
+      resourceId: uid,
+      action: 'update',
+      changes: buildChanges({}, updates),
     });
   } catch (error) {
     console.error("Error updating employee's hourly rate: ", error);

@@ -1,5 +1,6 @@
 import { db } from '@/firebase/config';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
+import { logAudit, buildChanges } from './auditLogService';
 import { Branch } from './types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -30,6 +31,13 @@ export async function addBranch(branchName: string): Promise<Branch> {
   const branchesCol = collection(db, 'branches');
   const branchId = uuidv4(); // Generate a unique ID for the branch
   const docRef = await addDoc(branchesCol, { branchId, branchName });
+  await logAudit({
+    branchId,
+    resourceType: 'branch',
+    resourceId: docRef.id,
+    action: 'create',
+    changes: buildChanges({}, { branchId, branchName }),
+  });
   return { id: docRef.id, branchId, branchName };
 }
 
@@ -45,7 +53,15 @@ export async function updateBranch(id: string, branchId: string, newBranchName: 
     throw new Error('지점 이름은 비워둘 수 없습니다.');
   }
   const branchDoc = doc(db, 'branches', id);
-  await updateDoc(branchDoc, { branchName: newBranchName });
+  const updates = { branchName: newBranchName };
+  await updateDoc(branchDoc, updates);
+  await logAudit({
+    branchId,
+    resourceType: 'branch',
+    resourceId: id,
+    action: 'update',
+    changes: buildChanges({}, updates),
+  });
 }
 
 /**
@@ -56,4 +72,11 @@ export async function updateBranch(id: string, branchId: string, newBranchName: 
 export async function deleteBranch(id: string): Promise<void> {
   const branchDoc = doc(db, 'branches', id);
   await deleteDoc(branchDoc);
+  await logAudit({
+    branchId: id, // No branchId field in doc, use id reference
+    resourceType: 'branch',
+    resourceId: id,
+    action: 'delete',
+    changes: buildChanges({}, {}),
+  });
 }

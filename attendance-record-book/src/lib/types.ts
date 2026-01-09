@@ -35,3 +35,19 @@ export interface Branch {
   branchName: string;     // 지점명 (예: "강남점", "홍대점")
 }
 
+export interface AuditChangeField<T = unknown> {
+  before: T | null;
+  after: T | null;
+}
+
+export interface AuditLogEntry {
+  branchId: string;
+  resourceType: 'attendance' | 'user' | 'branch';
+  resourceId: string;
+  action: 'create' | 'update' | 'delete' | 'reactivate' | 'deactivate';
+  actorId?: string | null;
+  actorName?: string | null;
+  changes?: Record<string, AuditChangeField>;
+  timestamp?: any; // Firestore serverTimestamp()
+}
+
