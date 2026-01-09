@@ -227,6 +227,86 @@ export default function EmployeeDetailPage() {
     }));
   };
 
+  const handleBreakChange = (breakIndex: number, field: 'start' | 'end', value: string) => {
+    if (!editingRecordId) return;
+    const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
+    if (!currentRecord) return;
+
+    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []) as Attendance['breaks'])];
+    if (!existingBreaks[breakIndex]) return;
+
+    const originalTimestamp = field === 'start' ? existingBreaks[breakIndex].start : existingBreaks[breakIndex].end;
+    const newTimestamp = parseTimeToTimestamp(value, originalTimestamp, currentRecord.date);
+
+    if (newTimestamp) {
+      existingBreaks[breakIndex] = {
+        ...existingBreaks[breakIndex],
+        [field]: newTimestamp
+      };
+      setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
+    }
+  };
+
+  const handleAddBreak = () => {
+    if (!editingRecordId) return;
+    const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
+    if (!currentRecord) return;
+
+    const checkInTs = (editingFormData.checkIn as Timestamp) || currentRecord.checkIn;
+    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []) as Attendance['breaks'])];
+    
+    // Create a new break starting 1 hour after check-in, 30 minutes duration
+    const defaultStart = new Date(checkInTs.toDate());
+    defaultStart.setHours(defaultStart.getHours() + 1);
+    const defaultEnd = new Date(defaultStart);
+    defaultEnd.setMinutes(defaultEnd.getMinutes() + 30);
+
+    existingBreaks.push({
+      start: Timestamp.fromDate(defaultStart),
+      end: Timestamp.fromDate(defaultEnd)
+    });
+
+    setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
+  };
+
+  const handleDeleteBreak = (breakIndex: number) => {
+    if (!editingRecordId) return;
+    const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
+    if (!currentRecord) return;
+
+    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []) as Attendance['breaks'])];
+    existingBreaks.splice(breakIndex, 1);
+    setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
+  };
+    }
+
+    // Append a synthetic break right before checkout
+    const checkOutDate = checkOutTs.toDate();
+    
+    // Check if the work period is valid (checkout should be after checkin)
+    if (checkOutDate <= checkInDate) {
+      alert('출근과 퇴근 시간이 같거나 역순입니다.');
+      return;
+    }
+    
+    const totalWorkMinutes = Math.floor((checkOutDate.getTime() - checkInDate.getTime()) / 60000);
+    
+    // Calculate the break start time (missing minutes before checkout)
+    let startDate = new Date(checkOutDate.getTime() - missing * 60000);
+
+    // If start date goes before check-in, cap it at check-in time
+    if (startDate < checkInDate) {
+      startDate = checkInDate;
+    }
+
+    const newBreak = { start: Timestamp.fromDate(startDate), end: Timestamp.fromDate(checkOutDate) } as Attendance['breaks'][number];
+
+    setEditingFormData(prev => ({
+      ...prev,
+      breaks: [...existingBreaks, newBreak],
+    }));
+  };
+
   // Generate year options
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i); // Current year +/- 2
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -323,21 +403,58 @@ export default function EmployeeDetailPage() {
                         record.checkOut ? new Date(record.checkOut.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '근무 중'
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {record.breaks && record.breaks.length > 0 ? 
-                        record.breaks.map((b, index) => {
-                          const breakStartTime = new Date(b.start.seconds * 1000);
-                          const breakEndTime = b.end ? new Date(b.end.seconds * 1000) : null;
-                          const duration = breakEndTime ? differenceInMinutes(breakEndTime, breakStartTime) : null;
-                          
-                          return (
-                            <div key={index}>
-                              {breakStartTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} - {breakEndTime ? breakEndTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '진행중'}
-                              {duration !== null && duration > 0 && ` (${duration}분)`}
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {editingRecordId === record.id ? (
+                        <div className="space-y-2">
+                          {((editingFormData.breaks || record.breaks || []) as Attendance['breaks']).map((b, index) => (
+                            <div key={index} className="flex items-center space-x-2 bg-gray-50 p-2 rounded">
+                              <input
+                                type="time"
+                                value={formatTimestampToTime(b.start)}
+                                onChange={(e) => handleBreakChange(index, 'start', e.target.value)}
+                                className="p-1 border rounded w-24 text-xs"
+                              />
+                              <span>-</span>
+                              <input
+                                type="time"
+                                value={formatTimestampToTime(b.end)}
+                                onChange={(e) => handleBreakChange(index, 'end', e.target.value)}
+                                className="p-1 border rounded w-24 text-xs"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteBreak(index)}
+                                className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded"
+                                title="이 휴게 시간 삭제"
+                              >
+                                ✕
+                              </button>
                             </div>
-                          );
-                        })
-                       : '-'}
+                          ))}
+                          <button
+                            type="button"
+                            onClick={handleAddBreak}
+                            className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded"
+                          >
+                            + 휴게 추가
+                          </button>
+                        </div>
+                      ) : (
+                        record.breaks && record.breaks.length > 0 ? 
+                          record.breaks.map((b, index) => {
+                            const breakStartTime = new Date(b.start.seconds * 1000);
+                            const breakEndTime = b.end ? new Date(b.end.seconds * 1000) : null;
+                            const duration = breakEndTime ? differenceInMinutes(breakEndTime, breakStartTime) : null;
+                            
+                            return (
+                              <div key={index}>
+                                {breakStartTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} - {breakEndTime ? breakEndTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '진행중'}
+                                {duration !== null && duration > 0 && ` (${duration}분)`}
+                              </div>
+                            );
+                          })
+                        : '-'
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {record.totalWorkMinutes > 0 ? `${Math.floor(record.totalWorkMinutes / 60)}시간 ${record.totalWorkMinutes % 60}분` : '-'}
