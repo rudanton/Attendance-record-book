@@ -270,7 +270,7 @@ export default function EmployeeDetailPage() {
                           name="checkIn"
                           value={formatTimestampToTime(editingFormData.checkIn as Timestamp)}
                           onChange={handleFormChange}
-                          className="p-2 border rounded-md w-32 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
+                          className="p-2 border rounded-md w-32 [&::-webkit-calendar-picker-indicator]:hidden"
                           placeholder="HH:mm"
                         />
                       ) : (
@@ -285,7 +285,7 @@ export default function EmployeeDetailPage() {
                             name="checkOut"
                             value={formatTimestampToTime(editingFormData.checkOut as Timestamp)}
                             onChange={handleFormChange}
-                            className="p-2 border rounded-md w-32 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
+                            className="p-2 border rounded-md w-32 [&::-webkit-calendar-picker-indicator]:hidden"
                             placeholder="HH:mm"
                           />
                           <div className="flex items-center space-x-2 flex-wrap">
@@ -311,14 +311,14 @@ export default function EmployeeDetailPage() {
                                 type="time"
                                 value={formatTimestampToTime(b.start)}
                                 onChange={(e) => handleBreakChange(index, 'start', e.target.value)}
-                                className="p-1 border rounded w-24 text-xs"
+                                className="p-1 border rounded w-24 text-xs [&::-webkit-calendar-picker-indicator]:hidden"
                               />
                               <span>-</span>
                               <input
                                 type="time"
                                 value={formatTimestampToTime(b.end)}
                                 onChange={(e) => handleBreakChange(index, 'end', e.target.value)}
-                                className="p-1 border rounded w-24 text-xs"
+                                className="p-1 border rounded w-24 text-xs [&::-webkit-calendar-picker-indicator]:hidden"
                               />
                               <button
                                 type="button"
