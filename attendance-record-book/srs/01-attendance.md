@@ -50,6 +50,21 @@
 
 ---
 
+## P2: 출퇴근 수정 요청 (점진적 롤아웃, 향후)
+
+### 수정 요청 기능
+- [ ] 개인 이력 페이지에서 과거 기록 행 선택 → 수정 요청 모달 열기
+- [ ] 요청 항목: 수정할 출퇴근 시간, 수정 사유 기입
+- [ ] 요청 저장 → `attendanceModificationRequests` Collection에 저장
+  - `requestId`, `employeeId`, `recordId`, `proposedCheckIn`, `proposedCheckOut`, `reason`, `status` (pending/approved/rejected), `requestedAt`, `respondedAt`, `respondedBy`
+- [ ] 관리자 페이지에서 "수정 요청 대기" 탭 → 미승인 요청 목록 조회
+- [ ] 각 요청 클릭 → 현재 기록 vs 제안 기록 비교 표시
+- [ ] [수락] → 제안 기록으로 업데이트, 원본 기록 감사 로그 남김
+- [ ] [거절] → status=rejected, 거절 사유(선택) 저장
+- [ ] (선택) 직원에게 수정 요청 결과 알림 (관리자가 응답하면 이메일/앱 푸시 등)
+
+---
+
 ## DB Schema
 
 ### `employees` Collection
