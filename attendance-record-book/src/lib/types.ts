@@ -9,6 +9,7 @@ export interface User {
   hourlyRate: number;     // 시급
   isActive: boolean;      // Soft Delete 여부 (true: 재직, false: 퇴사)
   joinedAt: Timestamp;    // 입사일
+  branchIds?: string[];   // 관리자가 관리하는 지점 목록 (관리자 전용, 배열)
 }
 
 export interface BreakRecord {

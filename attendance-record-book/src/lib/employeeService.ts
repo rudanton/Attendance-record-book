@@ -144,13 +144,14 @@ export async function getAllEmployees(branchId: string): Promise<User[]> {
 
 /**
  * Fetches all active employees from the 'users' collection for a specific branch.
+ * Excludes admins - only returns staff members for the attendance dashboard.
  * @param branchId The ID of the branch to filter active employees by.
- * @returns Promise<User[]> An array of active employees for the specified branch.
+ * @returns Promise<User[]> An array of active staff employees for the specified branch.
  */
 export async function getActiveEmployees(branchId: string): Promise<User[]> {
   try {
     const usersCollectionRef = collection(db, 'users');
-    const q = query(usersCollectionRef, where('branchId', '==', branchId), where('isActive', '==', true)); // Filter by branchId and isActive
+    const q = query(usersCollectionRef, where('branchId', '==', branchId), where('isActive', '==', true), where('role', '==', 'staff')); // Filter by branchId, isActive, and role
     const querySnapshot = await getDocs(q);
     
     const employees: User[] = [];
