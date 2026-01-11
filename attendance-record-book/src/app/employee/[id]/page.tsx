@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { getMonthlyAttendance, updateAttendanceRecord } from '@/lib/attendanceService';
+import { autoCloseLongSessions, getMonthlyAttendance, updateAttendanceRecord } from '@/lib/attendanceService';
 import { Attendance } from '@/lib/types';
 import { differenceInMinutes } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
@@ -62,6 +62,7 @@ export default function EmployeeDetailPage() {
     if (!employeeId || !branchId) return;
     setLoading(true);
     try {
+      await autoCloseLongSessions(branchId);
       const records = await getMonthlyAttendance(branchId, employeeId, selectedYear, selectedMonth);
       setAttendanceRecords(records);
     } catch (error) {

@@ -19,6 +19,8 @@ import { Attendance } from './types';
 import { buildChanges, logAudit } from './auditLogService';
 import { isValid, startOfMinute } from 'date-fns';
 
+const TWENTY_HOURS_MS = 20 * 60 * 60 * 1000;
+
 function getTodayDateString() {
   const today = new Date();
   const year = today.getFullYear();
@@ -86,6 +88,86 @@ function calculateWorkMinutes(
 export const __testables = {
   calculateWorkMinutes,
 };
+
+/**
+ * Automatically closes open sessions that exceed 20 hours from check-in.
+ * Used as a client-side/opportunistic safeguard for 24h stores before a backend scheduler exists.
+ */
+export async function autoCloseLongSessions(branchId: string): Promise<void> {
+  const attendanceCol = collection(db, 'attendance');
+  const q = query(attendanceCol, where('branchId', '==', branchId), where('checkOut', '==', null));
+  const snapshot = await getDocs(q);
+
+  const now = Timestamp.now();
+
+  for (const docSnap of snapshot.docs) {
+    const record = docSnap.data() as Attendance;
+    if (!record.checkIn) continue;
+
+    const checkInTs = record.checkIn as Timestamp;
+    const checkInMs = checkInTs.toMillis();
+    if (now.toMillis() - checkInMs < TWENTY_HOURS_MS) continue;
+
+    const attendanceDocRef = doc(db, 'attendance', docSnap.id);
+
+    // Base checkout time: check-in + 20h
+    let checkOutTs = Timestamp.fromMillis(checkInMs + TWENTY_HOURS_MS);
+    const breaks = [...(record.breaks || [])];
+
+    // Close any open break at checkout time
+    const openBreakIndex = breaks.findIndex(_break => _break.end === null);
+    if (openBreakIndex !== -1) {
+      breaks[openBreakIndex].end = checkOutTs;
+    }
+
+    // Enforce minimum breaks (same logic as manual clock-out)
+    let totalBreakMinutes = 0;
+    breaks.forEach(_break => {
+      if (_break.start && _break.end) {
+        totalBreakMinutes += Math.floor(((_break.end.toDate().getTime() - _break.start.toDate().getTime()) / 60000));
+      }
+    });
+
+    const totalElapsedMinutes = Math.floor((checkOutTs.toDate().getTime() - checkInTs.toDate().getTime()) / 60000);
+    const totalWorkMinutes = totalElapsedMinutes - totalBreakMinutes;
+    const requiredBreakMinutes = totalWorkMinutes >= 8 * 60 ? 60 : totalWorkMinutes >= 4 * 60 ? 30 : 0;
+    if (requiredBreakMinutes > totalBreakMinutes) {
+      const additionalBreakNeeded = requiredBreakMinutes - totalBreakMinutes;
+      const originalCheckOutDate = checkOutTs.toDate();
+      const extendedCheckOutDate = new Date(originalCheckOutDate.getTime() + additionalBreakNeeded * 60000);
+      checkOutTs = Timestamp.fromDate(extendedCheckOutDate);
+
+      breaks.push({
+        start: Timestamp.fromDate(originalCheckOutDate),
+        end: checkOutTs,
+      });
+    }
+
+    const workMinutes = calculateWorkMinutes(checkInTs, checkOutTs, breaks);
+
+    await updateDoc(attendanceDocRef, {
+      checkOut: checkOutTs,
+      breaks,
+      ...workMinutes,
+      isAutoClosed: true,
+      autoClosedAt: now,
+    });
+
+    logAudit({
+      branchId,
+      resourceType: 'attendance',
+      resourceId: docSnap.id,
+      action: 'auto-close',
+      changes: buildChanges(record as Record<string, any>, {
+        checkOut: checkOutTs,
+        breaks,
+        ...workMinutes,
+        isAutoClosed: true,
+        autoClosedAt: now,
+      } as Record<string, any>),
+    }).catch(err => console.error('Failed to log audit for auto-close:', err));
+  }
+}
 
 
 /**

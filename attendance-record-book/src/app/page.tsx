@@ -9,7 +9,8 @@ import {
   clockOut, 
   startBreak, 
   endBreak, 
-  getRelevantAttendanceRecordsForDashboard 
+  getRelevantAttendanceRecordsForDashboard,
+  autoCloseLongSessions
 } from '@/lib/attendanceService';
 import BranchSelectPage from '@/components/BranchSelectPage';
 import { getAllBranches } from '@/lib/branchService'; // To get branch name
@@ -52,6 +53,7 @@ export default function HomePage() {
     }
     setLoading(true);
     try {
+      await autoCloseLongSessions(selectedBranchId);
       const [activeEmployees, relevantAttendance, allBranches] = await Promise.all([
         getActiveEmployees(selectedBranchId),
         getRelevantAttendanceRecordsForDashboard(selectedBranchId),
@@ -88,6 +90,7 @@ export default function HomePage() {
     }
     setRefreshing(true);
     try {
+      await autoCloseLongSessions(selectedBranchId);
       await clockIn(selectedBranchId, userId, userName);
       await fetchAllData();
     } catch (error) {
@@ -104,6 +107,7 @@ export default function HomePage() {
     }
     setRefreshing(true);
     try {
+      await autoCloseLongSessions(selectedBranchId);
       await clockOut(selectedBranchId, userId);
       await fetchAllData();
     } catch (error) {
@@ -120,6 +124,7 @@ export default function HomePage() {
     }
     setRefreshing(true);
     try {
+      await autoCloseLongSessions(selectedBranchId);
       await startBreak(selectedBranchId, userId);
       await fetchAllData();
     } catch (error) {
@@ -136,6 +141,7 @@ export default function HomePage() {
     }
     setRefreshing(true);
     try {
+      await autoCloseLongSessions(selectedBranchId);
       await endBreak(selectedBranchId, userId);
       await fetchAllData();
     } catch (error) {
