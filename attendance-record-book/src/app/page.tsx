@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { User, Attendance } from '@/lib/types';
 import { getActiveEmployees } from '@/lib/employeeService';
@@ -23,6 +23,10 @@ export default function HomePage() {
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [selectedBranchName, setSelectedBranchName] = useState<string | null>(null);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [showClockOutModal, setShowClockOutModal] = useState(false);
+  const [clockOutUserId, setClockOutUserId] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(3);
+  const clockOutTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // On initial load, try to get branchId from localStorage
@@ -105,16 +109,44 @@ export default function HomePage() {
       alert("지점을 먼저 선택해주세요.");
       return;
     }
+    
+    // 모달 표시
+    setClockOutUserId(userId);
+    setShowClockOutModal(true);
+    setCountdown(3);
+  };
+
+  // 카운트다운 효과
+  useEffect(() => {
+    if (showClockOutModal && countdown > 0) {
+      const timer = setTimeout(() => {
+        setCountdown(prev => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (showClockOutModal && countdown === 0 && clockOutUserId) {
+      confirmClockOut(clockOutUserId);
+    }
+  }, [showClockOutModal, countdown, clockOutUserId]);
+
+  const confirmClockOut = async (userId: string) => {
+    setShowClockOutModal(false);
+    setClockOutUserId(null);
     setRefreshing(true);
+    
     try {
-      await autoCloseLongSessions(selectedBranchId);
-      await clockOut(selectedBranchId, userId);
+      await autoCloseLongSessions(selectedBranchId!);
+      await clockOut(selectedBranchId!, userId);
       await fetchAllData();
     } catch (error) {
       console.error("Clock-out failed:", error);
       alert(error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.");
       setRefreshing(false);
     }
+  };
+
+  const cancelClockOut = () => {
+    setShowClockOutModal(false);
+    setClockOutUserId(null);
   };
 
   const handleStartBreak = async (userId: string) => {
@@ -253,7 +285,7 @@ export default function HomePage() {
                       <button
                         onClick={() => handleStartBreak(employee.uid)}
                         disabled={refreshing}
-                        className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500"
+                        className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500 mb-2"
                       >
                         휴식 시작
                       </button>
@@ -284,6 +316,32 @@ export default function HomePage() {
           <p>활성화된 직원이 없습니다.</p>
         )}
       </div>
+
+      {/* 퇴근 확인 모달 */}
+      {showClockOutModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg p-8 shadow-2xl max-w-md w-full mx-4">
+            <h2 className="text-2xl font-bold text-white mb-6 text-center">퇴근합니다.</h2>
+            <div className="flex space-x-4">
+              <button
+                onClick={() => clockOutUserId && confirmClockOut(clockOutUserId)}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded transition-colors duration-300"
+              >
+                확인
+              </button>
+              <button
+                onClick={cancelClockOut}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded transition-colors duration-300"
+              >
+                취소
+              </button>
+            </div>
+            <p className="text-gray-400 text-lg text-center mt-4 font-mono">
+              {countdown > 0 ? `${countdown}초 후 퇴근처리합니다.` : '처리 중...'}
+            </p>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
