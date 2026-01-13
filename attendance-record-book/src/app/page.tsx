@@ -383,13 +383,13 @@ export default function HomePage() {
                   <div className="text-gray-400 mb-4 text-center">{MESSAGES.TODAY_STATUS_LABEL}<span className={status.color}>{status.text}</span></div>
                   <div className="text-sm text-gray-500">
                     {attendanceRecord?.checkIn && (
-                      <div>{MESSAGES.CHECK_IN_LABEL}{new Date(attendanceRecord.checkIn.seconds * 1000).toLocaleTimeString(TIME_LOCALE, TIME_FORMAT_OPTIONS)}</div>
+                      <div>{MESSAGES.CHECK_IN_LABEL}{new Date((attendanceRecord.checkIn as any)?.seconds * 1000).toLocaleTimeString(TIME_LOCALE, TIME_FORMAT_OPTIONS)}</div>
                     )}
                     {openBreak && (
-                      <div className="text-cyan-400">{MESSAGES.BREAK_START_LABEL}{new Date(openBreak.start.seconds * 1000).toLocaleTimeString(TIME_LOCALE, TIME_FORMAT_OPTIONS)}</div>
+                      <div className="text-cyan-400">{MESSAGES.BREAK_START_LABEL}{new Date((openBreak?.start as any)?.seconds * 1000).toLocaleTimeString(TIME_LOCALE, TIME_FORMAT_OPTIONS)}</div>
                     )}
                     {attendanceRecord?.checkOut && (
-                      <div>{MESSAGES.CHECK_OUT_LABEL}{new Date(attendanceRecord.checkOut.seconds * 1000).toLocaleTimeString(TIME_LOCALE, TIME_FORMAT_OPTIONS)}</div>
+                      <div>{MESSAGES.CHECK_OUT_LABEL}{new Date((attendanceRecord.checkOut as any)?.seconds * 1000).toLocaleTimeString(TIME_LOCALE, TIME_FORMAT_OPTIONS)}</div>
                     )}
                   </div>
                 </div>
