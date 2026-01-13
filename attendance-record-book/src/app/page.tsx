@@ -117,12 +117,12 @@ export default function HomePage() {
     }
   }, []);
 
-  const fetchAllData = useCallback(async () => {
+  const fetchAllData = useCallback(async (silent = false) => {
     if (!selectedBranchId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       await autoCloseLongSessions(selectedBranchId);
       const [activeEmployees, relevantAttendance, allBranches] = await Promise.all([
@@ -140,8 +140,10 @@ export default function HomePage() {
     } catch (error) {
       console.error("Failed to initialize dashboard:", error);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!silent) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [selectedBranchId]);
 
@@ -159,14 +161,35 @@ export default function HomePage() {
       alert(MESSAGES.SELECT_BRANCH_FIRST);
       return;
     }
-    setRefreshing(true);
+    
+    // 낙관적 업데이트: UI 즉시 반영
+    const now = { seconds: Date.now() / 1000, nanoseconds: 0 };
+    setAttendance(prev => {
+      const newMap = new Map(prev);
+      newMap.set(userId, {
+        id: 'temp',
+        userId,
+        userName,
+        branchId: selectedBranchId,
+        date: new Date().toISOString().split('T')[0],
+        checkIn: now,
+        checkOut: null,
+        breaks: [],
+        regularWorkMinutes: 0,
+        nightWorkMinutes: 0,
+        totalWorkMinutes: 0
+      } as any);
+      return newMap;
+    });
+
+    // 백그라운드에서 실제 데이터 동기화
     try {
       await clockIn(selectedBranchId, userId, userName);
-      await fetchAllData();
+      fetchAllData(true); // silent 모드로 조용히 동기화
     } catch (error) {
       console.error("Clock-in failed:", error);
       alert(error instanceof Error ? error.message : MESSAGES.UNKNOWN_ERROR);
-      setRefreshing(false);
+      fetchAllData(true); // 에러 시 실제 데이터로 복구
     }
   };
 
@@ -197,15 +220,26 @@ export default function HomePage() {
   const confirmClockOut = async (userId: string) => {
     setShowClockOutModal(false);
     setClockOutUserId(null);
-    setRefreshing(true);
     
+    // 낙관적 업데이트: UI 즉시 반영
+    const now = { seconds: Date.now() / 1000, nanoseconds: 0 };
+    setAttendance(prev => {
+      const newMap = new Map(prev);
+      const existing = prev.get(userId);
+      if (existing) {
+        newMap.set(userId, { ...existing, checkOut: now });
+      }
+      return newMap;
+    });
+
+    // 백그라운드에서 실제 데이터 동기화
     try {
       await clockOut(selectedBranchId!, userId);
-      await fetchAllData();
+      fetchAllData(true); // silent 모드로 조용히 동기화
     } catch (error) {
       console.error("Clock-out failed:", error);
       alert(error instanceof Error ? error.message : MESSAGES.UNKNOWN_ERROR);
-      setRefreshing(false);
+      fetchAllData(true); // 에러 시 실제 데이터로 복구
     }
   };
 
@@ -219,14 +253,27 @@ export default function HomePage() {
       alert(MESSAGES.SELECT_BRANCH_FIRST);
       return;
     }
-    setRefreshing(true);
+    
+    // 낙관적 업데이트: UI 즉시 반영
+    const now = { seconds: Date.now() / 1000, nanoseconds: 0 };
+    setAttendance(prev => {
+      const newMap = new Map(prev);
+      const existing = prev.get(userId);
+      if (existing) {
+        const newBreaks = [...(existing.breaks || []), { start: now, end: null }];
+        newMap.set(userId, { ...existing, breaks: newBreaks as any });
+      }
+      return newMap;
+    });
+
+    // 백그라운드에서 실제 데이터 동기화
     try {
       await startBreak(selectedBranchId, userId);
-      await fetchAllData();
+      fetchAllData(true); // silent 모드로 조용히 동기화
     } catch (error) {
       console.error("Start break failed:", error);
       alert(error instanceof Error ? error.message : MESSAGES.UNKNOWN_ERROR);
-      setRefreshing(false);
+      fetchAllData(true); // 에러 시 실제 데이터로 복구
     }
   };
 
@@ -235,14 +282,29 @@ export default function HomePage() {
       alert(MESSAGES.SELECT_BRANCH_FIRST);
       return;
     }
-    setRefreshing(true);
+    
+    // 낙관적 업데이트: UI 즉시 반영
+    const now = { seconds: Date.now() / 1000, nanoseconds: 0 };
+    setAttendance(prev => {
+      const newMap = new Map(prev);
+      const existing = prev.get(userId);
+      if (existing && existing.breaks) {
+        const newBreaks = existing.breaks.map((b: any) => 
+          b.start && !b.end ? { ...b, end: now } : b
+        );
+        newMap.set(userId, { ...existing, breaks: newBreaks });
+      }
+      return newMap;
+    });
+
+    // 백그라운드에서 실제 데이터 동기화
     try {
       await endBreak(selectedBranchId, userId);
-      await fetchAllData();
+      fetchAllData(true); // silent 모드로 조용히 동기화
     } catch (error) {
       console.error("End break failed:", error);
       alert(error instanceof Error ? error.message : MESSAGES.UNKNOWN_ERROR);
-      setRefreshing(false);
+      fetchAllData(true); // 에러 시 실제 데이터로 복구
     }
   };
 
@@ -401,7 +463,6 @@ export default function HomePage() {
             </div>
             <p className="text-gray-400 text-lg text-center mt-4 font-mono">
               {countdown > 0 ? MESSAGES.COUNTDOWN_TEXT(countdown) : MESSAGES.PROCESSING}
-            </p>
             </p>
           </div>
         </div>
