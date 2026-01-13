@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
 import { Timestamp } from 'firebase/firestore';
+import { describe, expect, it, vi } from 'vitest';
 
 // Stub Firebase dependencies that attendanceService pulls in but tests do not need.
 vi.mock('@/firebase/config', () => ({

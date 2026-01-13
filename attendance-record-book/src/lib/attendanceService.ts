@@ -1,23 +1,25 @@
-import { db } from '@/firebase/config';
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  addDoc,
-  updateDoc,
-  doc,
-  getDoc,
-  serverTimestamp,
-  orderBy,
-  limit,
-  Timestamp,
-  Query,
-  DocumentData,
-} from 'firebase/firestore';
-import { Attendance } from './types';
-import { buildChanges, logAudit } from './auditLogService';
 import { isValid, startOfMinute } from 'date-fns';
+import {
+  addDoc,
+  collection,
+  doc,
+  DocumentData,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  Query,
+  query,
+  serverTimestamp,
+  Timestamp,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
+
+import { db } from '@/firebase/config';
+
+import { buildChanges, logAudit } from './auditLogService';
+import { Attendance } from './types';
 
 const TWENTY_HOURS_MS = 20 * 60 * 60 * 1000;
 
@@ -104,7 +106,7 @@ export async function autoCloseLongSessions(branchId: string): Promise<void> {
     const record = docSnap.data() as Attendance;
     if (!record.checkIn) continue;
 
-    const checkInTs = record.checkIn as Timestamp;
+    const checkInTs = record.checkIn;
     const checkInMs = checkInTs.toMillis();
     if (now.toMillis() - checkInMs < TWENTY_HOURS_MS) continue;
 
@@ -403,7 +405,7 @@ export async function updateAttendanceRecord(branchId: string, recordId: string,
     if (updatedFields.checkIn || updatedFields.checkOut || updatedFields.breaks) {
       const calculatedCheckIn = newCheckIn instanceof Timestamp ? newCheckIn : Timestamp.fromDate(newCheckIn as Date);
       let calculatedCheckOut = newCheckOut instanceof Timestamp ? newCheckOut : (newCheckOut ? Timestamp.fromDate(newCheckOut as Date) : null);
-      let finalBreaks = [...newBreaks];
+      const finalBreaks = [...newBreaks];
 
       // If checkout exists, ensure minimum breaks: 8h+ => 60m, 4h+ => 30m
       if (calculatedCheckOut) {
@@ -490,7 +492,7 @@ export async function addAttendanceRecord(branchId: string, newRecordData: {
 
   const checkInTimestamp = Timestamp.fromDate(checkIn);
   let checkOutTimestamp = checkOut ? Timestamp.fromDate(checkOut) : null;
-  let finalBreaks = [...breaks];
+  const finalBreaks = [...breaks];
 
   // If checkout exists, ensure minimum breaks: 8h+ => 60m, 4h+ => 30m
   if (checkOutTimestamp) {

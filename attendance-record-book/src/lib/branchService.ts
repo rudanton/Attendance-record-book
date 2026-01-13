@@ -1,8 +1,10 @@
-import { db } from '@/firebase/config';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
-import { logAudit, buildChanges } from './auditLogService';
-import { Branch } from './types';
+import { addDoc, collection, deleteDoc, doc, getDocs, orderBy,query, updateDoc } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
+
+import { db } from '@/firebase/config';
+
+import { buildChanges,logAudit } from './auditLogService';
+import { Branch } from './types';
 
 /**
  * Fetches all branches from Firestore.

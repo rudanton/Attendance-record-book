@@ -1,24 +1,41 @@
-import { dirname } from "path";
 import { fileURLToPath } from "url";
-import { FlatCompat } from "@eslint/eslintrc";
-
-// 플러그인 임포트
+import path, { dirname } from "path";
+import js from "@eslint/js";
+import tseslint from "typescript-eslint";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
 import unusedImports from "eslint-plugin-unused-imports";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
+const tsTypeCheckedConfigs = tseslint.configs.recommendedTypeChecked.map((config) => ({
+  ...config,
+  files: ["src/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}", "app/**/*.{ts,tsx}"],
+  languageOptions: {
+    ...config.languageOptions,
+    parserOptions: {
+      project: path.resolve(__dirname, "./tsconfig.json"),
+      tsconfigRootDir: __dirname,
+    },
+  },
+}));
 
-const eslintConfig = [
-  // 1. Next.js 기본 설정 + Prettier 설정 상속
-  ...compat.extends("next/core-web-vitals", "next/typescript", "prettier"),
+export default [
+  // 기본 JS 추천 설정
+  js.configs.recommended,
 
-  // 2. 커스텀 플러그인 및 룰 설정
+  // TypeScript 추천 + 타입체킹 설정 (소스 폴더 한정)
+  ...tsTypeCheckedConfigs,
+
+  // 글로벌 옵션 및 공통 규칙
   {
+    files: ["**/*.{ts,tsx,js,jsx}"],
+    languageOptions: {},
+    settings: {
+      react: {
+        version: "detect",
+      },
+    },
     plugins: {
       "simple-import-sort": simpleImportSort,
       "unused-imports": unusedImports,
@@ -43,16 +60,11 @@ const eslintConfig = [
         "error",
         {
           groups: [
-            // 1. React, Next.js 패키지
             ["^react", "^next"],
-            // 2. 외부 라이브러리 (a-z)
             ["^@?\\w"],
-            // 3. 내부 모듈 (컴포넌트, 유틸 등 - 절대 경로 @/)
             ["^@/"],
-            // 4. 상대 경로 imports (../../ 등)
             ["^\\.\\.(?!/?$)", "^\\.\\./?$"],
             ["^\\./(?=.*/)(?!/?$)", "^\\.(?!/?$)", "^\\./?$"],
-            // 5. 스타일 imports
             ["^.+\\.s?css$"],
           ],
         },
@@ -60,6 +72,9 @@ const eslintConfig = [
       "simple-import-sort/exports": "error",
     },
   },
-];
 
-export default eslintConfig;
+  // Next.js와 빌드 산출물 무시
+  {
+    ignores: [".next/**/*", "node_modules/**/*", "eslint.config.mjs", "**/*.config.*"],
+  },
+];

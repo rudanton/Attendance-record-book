@@ -2,8 +2,10 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
+
+import { onAuthStateChanged, signOut, User as FirebaseUser } from "firebase/auth";
+
 import { auth } from "@/firebase/config";
-import { signOut, onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 
 export default function AdminSessionWatcher() {
   const pathname = usePathname();

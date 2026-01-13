@@ -1,10 +1,38 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect,useState } from "react";
 import Link from "next/link";
-import { addEmployee } from "@/lib/employeeService";
+
 import { getAllBranches } from "@/lib/branchService";
+import { addEmployee } from "@/lib/employeeService";
 import { Branch } from "@/lib/types";
+
+// ===== Constants =====
+const STORAGE_KEYS = {
+  SELECTED_BRANCH: 'selectedBranchId',
+};
+
+const MESSAGES = {
+  BACK: '← 대시보드로 돌아가기',
+  CURRENT_BRANCH: '현재 지점:',
+  TITLE_SUFFIX: '신규 직원 추가',
+  NAME_LABEL: '이름',
+  ADD_BUTTON: '직원 추가',
+  LOADING: '초기 데이터를 불러오는 중...',
+  NO_BRANCH_TITLE: '등록된 지점이 없습니다.',
+  NO_BRANCH_DESC: '관리자에게 지점 추가를 요청하세요.',
+  NO_BRANCH_CTA: '대시보드로 돌아가기',
+  SELECT_BRANCH: '지점을 선택해주세요.',
+  NAME_REQUIRED: '이름을 입력해주세요.',
+  ADD_SUCCESS: '성공적으로 직원을 추가했습니다.',
+  ADD_FAILURE: '직원을 추가할 수 없습니다.',
+};
+
+const BUTTON_STYLES = {
+  PRIMARY: 'bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md h-10',
+  CTA: 'bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition-colors duration-300',
+  LINK: 'text-blue-600 hover:text-blue-800',
+};
 
 export default function PublicAddEmployeePage() {
   const [formState, setFormState] = useState({ name: "" });
@@ -18,16 +46,16 @@ export default function PublicAddEmployeePage() {
       const fetchedBranches = await getAllBranches();
       setBranches(fetchedBranches);
 
-      const storedBranchId = localStorage.getItem("selectedBranchId");
+      const storedBranchId = localStorage.getItem(STORAGE_KEYS.SELECTED_BRANCH);
       const validStored = storedBranchId && fetchedBranches.some(b => b.branchId === storedBranchId);
 
       if (validStored) {
-        setSelectedBranchId(storedBranchId as string);
+        setSelectedBranchId(storedBranchId);
         setSelectedBranchName(fetchedBranches.find(b => b.branchId === storedBranchId)?.branchName || null);
       } else if (fetchedBranches.length > 0) {
         setSelectedBranchId(fetchedBranches[0].branchId);
         setSelectedBranchName(fetchedBranches[0].branchName);
-        localStorage.setItem("selectedBranchId", fetchedBranches[0].branchId);
+        localStorage.setItem(STORAGE_KEYS.SELECTED_BRANCH, fetchedBranches[0].branchId);
       }
       setInitialLoadComplete(true);
     }
@@ -38,7 +66,7 @@ export default function PublicAddEmployeePage() {
     const newBranchId = e.target.value;
     setSelectedBranchId(newBranchId);
     setSelectedBranchName(branches.find(b => b.branchId === newBranchId)?.branchName || null);
-    localStorage.setItem("selectedBranchId", newBranchId);
+    localStorage.setItem(STORAGE_KEYS.SELECTED_BRANCH, newBranchId);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,12 +77,12 @@ export default function PublicAddEmployeePage() {
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBranchId) {
-      alert("지점을 선택해주세요.");
+      alert(MESSAGES.SELECT_BRANCH);
       return;
     }
     const { name } = formState;
     if (!name) {
-      alert("이름을 입력해주세요.");
+      alert(MESSAGES.NAME_REQUIRED);
       return;
     }
 
@@ -64,18 +92,18 @@ export default function PublicAddEmployeePage() {
         hourlyRate: 0,
         role: "staff",
       });
-      alert("성공적으로 직원을 추가했습니다.");
+      alert(MESSAGES.ADD_SUCCESS);
       setFormState({ name: "" });
     } catch (error) {
       console.error("Failed to add employee:", error);
-      alert(error instanceof Error ? error.message : "직원을 추가할 수 없습니다.");
+      alert(error instanceof Error ? error.message : MESSAGES.ADD_FAILURE);
     }
   };
 
   if (!initialLoadComplete) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-100 text-gray-800">
-        <p>초기 데이터를 불러오는 중...</p>
+        <p>{MESSAGES.LOADING}</p>
       </main>
     );
   }
@@ -83,11 +111,11 @@ export default function PublicAddEmployeePage() {
   if (branches.length === 0) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-100 text-gray-800 text-center">
-        <h1 className="text-4xl font-bold mb-4">등록된 지점이 없습니다.</h1>
-        <p className="text-xl mb-8">관리자에게 지점 추가를 요청하세요.</p>
+        <h1 className="text-4xl font-bold mb-4">{MESSAGES.NO_BRANCH_TITLE}</h1>
+        <p className="text-xl mb-8">{MESSAGES.NO_BRANCH_DESC}</p>
         <Link href="/">
-          <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition-colors duration-300">
-            대시보드로 돌아가기
+          <button className={BUTTON_STYLES.CTA}>
+            {MESSAGES.NO_BRANCH_CTA}
           </button>
         </Link>
       </main>
@@ -98,11 +126,11 @@ export default function PublicAddEmployeePage() {
     <main className="flex min-h-screen flex-col items-center p-12 bg-gray-100">
       <div className="w-full max-w-4xl">
         <div className="flex justify-between items-center mb-6">
-          <Link href="/" className="text-blue-600 hover:text-blue-800">
-            ← 대시보드로 돌아가기
+          <Link href="/" className={BUTTON_STYLES.LINK}>
+            {MESSAGES.BACK}
           </Link>
           <div className="flex items-center space-x-2">
-            <label htmlFor="branch-select" className="text-sm font-medium text-gray-700">현재 지점:</label>
+            <label htmlFor="branch-select" className="text-sm font-medium text-gray-700">{MESSAGES.CURRENT_BRANCH}</label>
             <select
               id="branch-select"
               value={selectedBranchId || ""}
@@ -117,13 +145,13 @@ export default function PublicAddEmployeePage() {
         </div>
 
         <h1 className="text-4xl font-bold mb-8 text-gray-800">
-          {selectedBranchName ? `${selectedBranchName} - ` : ""}신규 직원 추가
+          {selectedBranchName ? `${selectedBranchName} - ` : ""}{MESSAGES.TITLE_SUFFIX}
         </h1>
 
         <div className="w-full max-w-4xl p-6 bg-white rounded-lg shadow-md">
           <form onSubmit={handleAddEmployee} className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
             <div className="flex flex-col">
-              <label htmlFor="name" className="text-sm font-medium text-gray-600 mb-1">이름</label>
+              <label htmlFor="name" className="text-sm font-medium text-gray-600 mb-1">{MESSAGES.NAME_LABEL}</label>
               <input
                 type="text"
                 name="name"
@@ -135,9 +163,9 @@ export default function PublicAddEmployeePage() {
             </div>
             <button
               type="submit"
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md h-10"
+              className={BUTTON_STYLES.PRIMARY}
             >
-              직원 추가
+              {MESSAGES.ADD_BUTTON}
             </button>
           </form>
         </div>

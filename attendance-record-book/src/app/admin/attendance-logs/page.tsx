@@ -1,19 +1,47 @@
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
-import AdminRouteGuard from '@/components/admin/AdminRouteGuard';
-import { 
-  getAllAttendanceRecords, 
-  updateAttendanceRecord, 
-  addAttendanceRecord,
-  getAggregatedAttendance 
-} from '@/lib/attendanceService';
-import { getAllEmployees } from '@/lib/employeeService';
-import { getAllBranches } from '@/lib/branchService';
-import { Attendance, User, Branch } from '@/lib/types';
+import { useCallback,useEffect, useState } from 'react';
 import Link from 'next/link';
+
 import { Timestamp } from 'firebase/firestore';
 import { utils, writeFile } from 'xlsx';
+
+import AdminRouteGuard from '@/components/admin/AdminRouteGuard';
+import { 
+  addAttendanceRecord,
+  getAggregatedAttendance, 
+  getAllAttendanceRecords, 
+  updateAttendanceRecord} from '@/lib/attendanceService';
+import { getAllBranches } from '@/lib/branchService';
+import { getAllEmployees } from '@/lib/employeeService';
+import { Attendance, Branch,User } from '@/lib/types';
+
+// ===== Constants =====
+const STORAGE_KEYS = {
+  SELECTED_BRANCH: 'selectedBranchId',
+};
+
+const MESSAGES = {
+  LOADING: '초기 데이터를 불러오는 중...',
+  NO_BRANCH_TITLE: '등록된 지점이 없습니다.',
+  NO_BRANCH_DESC: '지점 관리에 접속하여 먼저 지점을 추가해주세요.',
+  NO_BRANCH_CTA: '지점 관리로 이동',
+  BACK: '← 관리자 메뉴로 돌아가기',
+  TITLE: '전체 출퇴근 기록 및 정산',
+  FILTER_TITLE: '월별 기록 필터',
+  EXPORT_BUTTON: '현재 월 기록 Excel로 다운로드',
+  ADD_SECTION_TITLE: '수동 기록 추가',
+  AGG_TITLE: '근무 시간 정산',
+  AGG_SUBMIT: '조회하기',
+  RECORDS_LOADING: '기록을 불러오는 중...',
+  NO_RECORDS: '출퇴근 기록이 없습니다.',
+  NO_FILTERED: '내보낼 기록이 없습니다.',
+  FETCH_ERROR: '데이터를 불러올 수 없습니다.',
+  UPDATE_ERROR: '기록을 업데이트할 수 없습니다.',
+  ADD_ERROR: '새 기록을 추가할 수 없습니다.',
+  REQUIRED_FIELDS: '직원, 날짜, 출근 시간은 필수입니다.',
+  CHECKIN_REQUIRED: '출근 시간은 필수입니다.',
+};
 
 // Helper function to format minutes into a "X시간 Y분" string
 const formatMinutes = (minutes: number) => {
@@ -98,7 +126,7 @@ function AdminAttendanceLogsContent() {
       const fetchedBranches = await getAllBranches();
       setBranches(fetchedBranches);
 
-      const storedBranchId = localStorage.getItem('selectedBranchId');
+      const storedBranchId = localStorage.getItem(STORAGE_KEYS.SELECTED_BRANCH);
       if (storedBranchId && fetchedBranches.some(b => b.branchId === storedBranchId)) {
         setSelectedBranchId(storedBranchId);
         setSelectedBranchName(fetchedBranches.find(b => b.branchId === storedBranchId)?.branchName || null);
@@ -106,7 +134,7 @@ function AdminAttendanceLogsContent() {
         // If stored ID is invalid or not found, select the first branch
         setSelectedBranchId(fetchedBranches[0].branchId);
         setSelectedBranchName(fetchedBranches[0].branchName);
-        localStorage.setItem('selectedBranchId', fetchedBranches[0].branchId);
+        localStorage.setItem(STORAGE_KEYS.SELECTED_BRANCH, fetchedBranches[0].branchId);
       }
       setInitialLoadComplete(true);
     }
@@ -128,7 +156,7 @@ function AdminAttendanceLogsContent() {
       setEmployees(emps);
     } catch (error) {
       console.error("Failed to fetch data:", error);
-      alert("데이터를 불러올 수 없습니다.");
+      alert(MESSAGES.FETCH_ERROR);
     } finally {
       setLoading(false);
     }
@@ -165,12 +193,12 @@ function AdminAttendanceLogsContent() {
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFilters(prev => ({ ...prev, [name]: parseInt(value) }));
+    setFilters(prev => ({ ...prev, [name]: parseInt(value, 10) }));
   };
 
   const handleExportToExcel = () => {
     if (filteredRecords.length === 0) {
-      alert('내보낼 기록이 없습니다.');
+      alert(MESSAGES.NO_FILTERED);
       return;
     }
 
@@ -232,7 +260,7 @@ function AdminAttendanceLogsContent() {
   const handleSaveEdit = async (recordId: string) => {
     if (!selectedBranchId) return; // Add check for selectedBranchId
     if (!editingFormData.checkIn) {
-      alert('출근 시간은 필수입니다.');
+      alert(MESSAGES.CHECKIN_REQUIRED);
       return;
     }
     try {
@@ -241,7 +269,7 @@ function AdminAttendanceLogsContent() {
       handleCancelEdit();
     } catch (error) {
       console.error("Failed to update record:", error);
-      alert(error instanceof Error ? error.message : "기록을 업데이트할 수 없습니다.");
+      alert(error instanceof Error ? error.message : MESSAGES.UPDATE_ERROR);
     }
   };
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -255,7 +283,7 @@ function AdminAttendanceLogsContent() {
     
     // 퇴근 시간을 수정하는 경우, 출근 시간보다 이르면 다음날로 간주
     if (name === 'checkOut' && newTimestamp && editingFormData.checkIn) {
-      const checkInDate = (editingFormData.checkIn as Timestamp).toDate();
+      const checkInDate = (editingFormData.checkIn).toDate();
       const checkOutDate = newTimestamp.toDate();
       if (checkOutDate <= checkInDate) {
         checkOutDate.setDate(checkOutDate.getDate() + 1);
@@ -270,12 +298,12 @@ function AdminAttendanceLogsContent() {
     if (!editingFormData.checkOut) {
       // 출근 시간이 있으면 출근 시간 + 30분을 기본값으로 설정
       if (editingFormData.checkIn) {
-        const newCheckOut = new Date((editingFormData.checkIn as Timestamp).toDate());
+        const newCheckOut = new Date((editingFormData.checkIn).toDate());
         newCheckOut.setMinutes(newCheckOut.getMinutes() + 30);
         setEditingFormData(prev => ({ ...prev, checkOut: Timestamp.fromDate(newCheckOut) }));
       }
     } else {
-      const currentCheckOut = (editingFormData.checkOut as Timestamp).toDate();
+      const currentCheckOut = (editingFormData.checkOut).toDate();
       currentCheckOut.setMinutes(currentCheckOut.getMinutes() + 30);
       setEditingFormData(prev => ({ ...prev, checkOut: Timestamp.fromDate(currentCheckOut) }));
     }
@@ -314,7 +342,7 @@ function AdminAttendanceLogsContent() {
     if (!selectedBranchId) return; // Add check for selectedBranchId
     const { userId, userName, date, checkInTime, checkOutTime } = newRecordFormData;
     if (!userId || !date || !checkInTime) {
-      alert('직원, 날짜, 출근 시간은 필수입니다.');
+      alert(MESSAGES.REQUIRED_FIELDS);
       return;
     }
     try {
@@ -335,7 +363,7 @@ function AdminAttendanceLogsContent() {
       await fetchData(); // Refresh list after add
     } catch (error) {
       console.error("Failed to add new record:", error);
-      alert(error instanceof Error ? error.message : "새 기록을 추가할 수 없습니다.");
+      alert(error instanceof Error ? error.message : MESSAGES.ADD_ERROR);
     }
   };
 
@@ -384,13 +412,13 @@ function AdminAttendanceLogsContent() {
     const newBranchId = e.target.value;
     setSelectedBranchId(newBranchId);
     setSelectedBranchName(branches.find(b => b.branchId === newBranchId)?.branchName || null);
-    localStorage.setItem('selectedBranchId', newBranchId);
+    localStorage.setItem(STORAGE_KEYS.SELECTED_BRANCH, newBranchId);
   };
 
   if (!initialLoadComplete) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-100 text-gray-800">
-        <p>초기 데이터를 불러오는 중...</p>
+        <p>{MESSAGES.LOADING}</p>
       </main>
     );
   }
@@ -398,11 +426,11 @@ function AdminAttendanceLogsContent() {
   if (branches.length === 0) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-100 text-gray-800 text-center">
-        <h1 className="text-4xl font-bold mb-4">등록된 지점이 없습니다.</h1>
-        <p className="text-xl mb-8">지점 관리에 접속하여 먼저 지점을 추가해주세요.</p>
+        <h1 className="text-4xl font-bold mb-4">{MESSAGES.NO_BRANCH_TITLE}</h1>
+        <p className="text-xl mb-8">{MESSAGES.NO_BRANCH_DESC}</p>
         <Link href="/admin/manage-branches">
           <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition-colors duration-300">
-            지점 관리로 이동
+            {MESSAGES.NO_BRANCH_CTA}
           </button>
         </Link>
       </main>
@@ -414,7 +442,7 @@ function AdminAttendanceLogsContent() {
       <div className="w-full max-w-7xl">
         <div className="flex justify-between items-center mb-8">
             <Link href="/admin" className="text-blue-600 hover:text-blue-800">
-                ← 관리자 메뉴로 돌아가기
+              {MESSAGES.BACK}
             </Link>
             <div className="flex items-center space-x-2">
                 <label htmlFor="branch-select" className="text-sm font-medium text-gray-700">현재 지점:</label>
@@ -431,14 +459,14 @@ function AdminAttendanceLogsContent() {
             </div>
         </div>
         <h1 className="text-4xl font-bold mb-8 text-gray-800">
-            {selectedBranchName ? `${selectedBranchName} - ` : ''}전체 출퇴근 기록 및 정산
+          {selectedBranchName ? `${selectedBranchName} - ` : ''}{MESSAGES.TITLE}
         </h1>
       
       {selectedBranchId && ( // Render content only if a branch is selected
         <>
         <div className="w-full max-w-6xl mb-4 p-6 bg-white rounded-lg shadow-md flex items-center justify-between">
             <div className="flex items-center space-x-4">
-            <h2 className="text-xl font-semibold">월별 기록 필터</h2>
+            <h2 className="text-xl font-semibold">{MESSAGES.FILTER_TITLE}</h2>
             <select name="year" value={filters.year} onChange={handleFilterChange} className="p-2 border rounded-md">
                 {years.map(year => <option key={year} value={year}>{year}년</option>)}
             </select>
@@ -447,12 +475,12 @@ function AdminAttendanceLogsContent() {
             </select>
             </div>
             <button onClick={handleExportToExcel} className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md">
-            현재 월 기록 Excel로 다운로드
+            {MESSAGES.EXPORT_BUTTON}
             </button>
         </div>
 
         <div className="w-full max-w-6xl mb-8 p-6 bg-white rounded-lg shadow-md">
-            <h2 className="text-2xl font-semibold mb-4">수동 기록 추가</h2>
+            <h2 className="text-2xl font-semibold mb-4">{MESSAGES.ADD_SECTION_TITLE}</h2>
             <form onSubmit={handleAddRecord} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="flex flex-col">
                 <label htmlFor="newUserId" className="text-sm font-medium text-gray-600 mb-1">직원</label>
@@ -520,7 +548,7 @@ function AdminAttendanceLogsContent() {
 
         {/* Aggregation Section */}
         <div className="w-full max-w-7xl mb-8 p-6 bg-white rounded-lg shadow-md">
-            <h2 className="text-2xl font-semibold mb-4">근무 시간 정산</h2>
+          <h2 className="text-2xl font-semibold mb-4">{MESSAGES.AGG_TITLE}</h2>
             <form onSubmit={handleAggregate} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div className="flex flex-col">
                 <label htmlFor="aggStartDate" className="text-sm font-medium text-gray-600 mb-1">시작일</label>
@@ -537,7 +565,7 @@ function AdminAttendanceLogsContent() {
                 {employees.map(emp => (<option key={emp.uid} value={emp.uid}>{emp.name}</option>))}
                 </select>
             </div>
-            <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md h-10 self-end">조회하기</button>
+            <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md h-10 self-end">{MESSAGES.AGG_SUBMIT}</button>
             </form>
 
             {aggregatedResults.size > 0 && (
@@ -569,7 +597,7 @@ function AdminAttendanceLogsContent() {
 
         <div className="w-full max-w-7xl bg-white rounded-lg shadow-md overflow-hidden">
             {loading ? (
-            <p className="p-6 text-center">기록을 불러오는 중...</p>
+            <p className="p-6 text-center">{MESSAGES.RECORDS_LOADING}</p>
             ) : (
             <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -643,7 +671,7 @@ function AdminAttendanceLogsContent() {
                 ) : (
                     <tr>
                         <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
-                            출퇴근 기록이 없습니다.
+                          {MESSAGES.NO_RECORDS}
                         </td>
                     </tr>
                 )}

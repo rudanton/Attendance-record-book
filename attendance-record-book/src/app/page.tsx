@@ -1,19 +1,21 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef,useState } from 'react';
 import Link from 'next/link';
-import { User, Attendance } from '@/lib/types';
-import { getActiveEmployees } from '@/lib/employeeService';
+
+import { Timestamp } from 'firebase/firestore';
+
+import BranchSelectPage from '@/components/BranchSelectPage';
 import { 
+  autoCloseLongSessions,
   clockIn, 
   clockOut, 
-  startBreak, 
   endBreak, 
   getRelevantAttendanceRecordsForDashboard,
-  autoCloseLongSessions
-} from '@/lib/attendanceService';
-import BranchSelectPage from '@/components/BranchSelectPage';
+  startBreak} from '@/lib/attendanceService';
 import { getAllBranches } from '@/lib/branchService'; // To get branch name
+import { getActiveEmployees } from '@/lib/employeeService';
+import { Attendance, BreakRecord,User } from '@/lib/types';
 
 // ========== 상수 정의 ==========
 
@@ -82,6 +84,16 @@ const MESSAGES = {
 
 // ================================
 
+const getNowTimestamp = () => Timestamp.now();
+
+const buildBreaksWithAppend = (existing: BreakRecord[] | undefined, start: Timestamp) => ([...(existing ?? []), { start, end: null }]);
+
+const closeLatestBreak = (existing: BreakRecord[] | undefined, end: Timestamp): BreakRecord[] => {
+  return (existing ?? []).map((item) =>
+    item.start && !item.end ? { ...item, end } : item
+  );
+};
+
 export default function HomePage() {
   const [employees, setEmployees] = useState<User[]>([]);
   const [attendance, setAttendance] = useState<Map<string, Attendance>>(new Map());
@@ -117,24 +129,24 @@ export default function HomePage() {
     }
   }, []);
 
-  const fetchAllData = useCallback(async (silent = false) => {
-    if (!selectedBranchId) {
+  const fetchAllData = useCallback(async (branchId: string, silent = false) => {
+    if (!branchId) {
       setLoading(false);
       return;
     }
     if (!silent) setLoading(true);
     try {
-      await autoCloseLongSessions(selectedBranchId);
+      await autoCloseLongSessions(branchId);
       const [activeEmployees, relevantAttendance, allBranches] = await Promise.all([
-        getActiveEmployees(selectedBranchId),
-        getRelevantAttendanceRecordsForDashboard(selectedBranchId),
+        getActiveEmployees(branchId),
+        getRelevantAttendanceRecordsForDashboard(branchId),
         getAllBranches() // Fetch branches to get the name
       ]);
       setEmployees(activeEmployees);
       const attendanceMap = new Map(relevantAttendance.map(a => [a.userId, a]));
       setAttendance(attendanceMap);
 
-      const branch = allBranches.find(b => b.branchId === selectedBranchId);
+      const branch = allBranches.find(b => b.branchId === branchId);
       setSelectedBranchName(branch ? branch.branchName : null);
 
     } catch (error) {
@@ -145,11 +157,11 @@ export default function HomePage() {
         setRefreshing(false);
       }
     }
-  }, [selectedBranchId]);
+  }, []);
 
   useEffect(() => {
     if (initialLoadComplete && selectedBranchId) {
-      fetchAllData();
+      fetchAllData(selectedBranchId);
     } else if (initialLoadComplete && !selectedBranchId) {
       setLoading(false); // No branch selected, so stop loading
     }
@@ -163,7 +175,7 @@ export default function HomePage() {
     }
     
     // 낙관적 업데이트: UI 즉시 반영
-    const now = { seconds: Date.now() / 1000, nanoseconds: 0 };
+    const now = getNowTimestamp();
     setAttendance(prev => {
       const newMap = new Map(prev);
       newMap.set(userId, {
@@ -175,21 +187,22 @@ export default function HomePage() {
         checkIn: now,
         checkOut: null,
         breaks: [],
+        isModified: false,
         regularWorkMinutes: 0,
         nightWorkMinutes: 0,
         totalWorkMinutes: 0
-      } as any);
+      });
       return newMap;
     });
 
     // 백그라운드에서 실제 데이터 동기화
     try {
       await clockIn(selectedBranchId, userId, userName);
-      fetchAllData(true); // silent 모드로 조용히 동기화
+      fetchAllData(selectedBranchId, true); // silent 모드로 조용히 동기화
     } catch (error) {
       console.error("Clock-in failed:", error);
       alert(error instanceof Error ? error.message : MESSAGES.UNKNOWN_ERROR);
-      fetchAllData(true); // 에러 시 실제 데이터로 복구
+      fetchAllData(selectedBranchId, true); // 에러 시 실제 데이터로 복구
     }
   };
 
@@ -222,7 +235,7 @@ export default function HomePage() {
     setClockOutUserId(null);
     
     // 낙관적 업데이트: UI 즉시 반영
-    const now = { seconds: Date.now() / 1000, nanoseconds: 0 };
+    const now = getNowTimestamp();
     setAttendance(prev => {
       const newMap = new Map(prev);
       const existing = prev.get(userId);
@@ -235,11 +248,11 @@ export default function HomePage() {
     // 백그라운드에서 실제 데이터 동기화
     try {
       await clockOut(selectedBranchId!, userId);
-      fetchAllData(true); // silent 모드로 조용히 동기화
+      fetchAllData(selectedBranchId!, true); // silent 모드로 조용히 동기화
     } catch (error) {
       console.error("Clock-out failed:", error);
       alert(error instanceof Error ? error.message : MESSAGES.UNKNOWN_ERROR);
-      fetchAllData(true); // 에러 시 실제 데이터로 복구
+      fetchAllData(selectedBranchId!, true); // 에러 시 실제 데이터로 복구
     }
   };
 
@@ -255,13 +268,13 @@ export default function HomePage() {
     }
     
     // 낙관적 업데이트: UI 즉시 반영
-    const now = { seconds: Date.now() / 1000, nanoseconds: 0 };
+    const now = getNowTimestamp();
     setAttendance(prev => {
       const newMap = new Map(prev);
       const existing = prev.get(userId);
       if (existing) {
-        const newBreaks = [...(existing.breaks || []), { start: now, end: null }];
-        newMap.set(userId, { ...existing, breaks: newBreaks as any });
+        const newBreaks = buildBreaksWithAppend(existing.breaks, now);
+        newMap.set(userId, { ...existing, breaks: newBreaks });
       }
       return newMap;
     });
@@ -269,11 +282,11 @@ export default function HomePage() {
     // 백그라운드에서 실제 데이터 동기화
     try {
       await startBreak(selectedBranchId, userId);
-      fetchAllData(true); // silent 모드로 조용히 동기화
+      fetchAllData(selectedBranchId, true); // silent 모드로 조용히 동기화
     } catch (error) {
       console.error("Start break failed:", error);
       alert(error instanceof Error ? error.message : MESSAGES.UNKNOWN_ERROR);
-      fetchAllData(true); // 에러 시 실제 데이터로 복구
+      fetchAllData(selectedBranchId, true); // 에러 시 실제 데이터로 복구
     }
   };
 
@@ -284,14 +297,12 @@ export default function HomePage() {
     }
     
     // 낙관적 업데이트: UI 즉시 반영
-    const now = { seconds: Date.now() / 1000, nanoseconds: 0 };
+    const now = getNowTimestamp();
     setAttendance(prev => {
       const newMap = new Map(prev);
       const existing = prev.get(userId);
       if (existing && existing.breaks) {
-        const newBreaks = existing.breaks.map((b: any) => 
-          b.start && !b.end ? { ...b, end: now } : b
-        );
+        const newBreaks = closeLatestBreak(existing.breaks, now);
         newMap.set(userId, { ...existing, breaks: newBreaks });
       }
       return newMap;
@@ -300,11 +311,11 @@ export default function HomePage() {
     // 백그라운드에서 실제 데이터 동기화
     try {
       await endBreak(selectedBranchId, userId);
-      fetchAllData(true); // silent 모드로 조용히 동기화
+      fetchAllData(selectedBranchId, true); // silent 모드로 조용히 동기화
     } catch (error) {
       console.error("End break failed:", error);
       alert(error instanceof Error ? error.message : MESSAGES.UNKNOWN_ERROR);
-      fetchAllData(true); // 에러 시 실제 데이터로 복구
+      fetchAllData(selectedBranchId, true); // 에러 시 실제 데이터로 복구
     }
   };
 

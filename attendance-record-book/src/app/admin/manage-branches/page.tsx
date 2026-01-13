@@ -1,13 +1,43 @@
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '@/firebase/config';
-import { Branch, User } from '@/lib/types';
-import { getAllBranches, addBranch, updateBranch, deleteBranch } from '@/lib/branchService';
+import { useCallback,useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+
+import { auth, db } from '@/firebase/config';
+import { addBranch, deleteBranch,getAllBranches, updateBranch } from '@/lib/branchService';
+import { Branch, User } from '@/lib/types';
+
+// ===== Constants =====
+const STORAGE_KEYS = {
+  BRANCH_ID: 'branchId',
+};
+
+const MESSAGES = {
+  TITLE: '지점 관리',
+  BACK: '← 관리자 메뉴로 돌아가기',
+  NEW_BRANCH_TITLE: '새 지점 추가',
+  NEW_BRANCH_PLACEHOLDER: '새 지점 이름',
+  NEW_BRANCH_ADD: '지점 추가',
+  LIST_TITLE: '지점 목록',
+  LOADING_BRANCHES: '지점 목록을 불러오는 중...',
+  AUTH_CHECKING: '권한 확인 중...',
+  NO_ACCESS: '접근 권한이 없습니다.',
+  INPUT_REQUIRED: '지점 이름을 입력해주세요.',
+  DELETE_CONFIRM: (branchName: string) => `정말로 지점 "${branchName}"을(를) 삭제하시겠습니까?`,
+  FETCH_ERROR: '지점 목록을 불러올 수 없습니다.',
+  ADD_ERROR: '지점을 추가할 수 없습니다.',
+  UPDATE_ERROR: '지점을 수정할 수 없습니다.',
+  DELETE_ERROR: '지점을 삭제할 수 없습니다.',
+};
+
+const BUTTON_STYLES = {
+  PRIMARY: 'bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md',
+  LINK: 'text-blue-600 hover:text-blue-800',
+};
 
 function ManageBranchesPageContent() {
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -27,7 +57,7 @@ function ManageBranchesPageContent() {
       return fetchedBranches;
     } catch (error) {
       console.error("Failed to fetch branches:", error);
-      alert("지점 목록을 불러올 수 없습니다.");
+      alert(MESSAGES.FETCH_ERROR);
       return [];
     } finally {
       setLoading(false);
@@ -37,7 +67,7 @@ function ManageBranchesPageContent() {
   // Check authorization: if no branchId in localStorage, allow access; otherwise require admin
   useEffect(() => {
     const checkAuth = async () => {
-      const storedBranchId = localStorage.getItem('branchId');
+      const storedBranchId = localStorage.getItem(STORAGE_KEYS.BRANCH_ID);
       
       // If no branchId in localStorage, skip auth check
       if (!storedBranchId) {
@@ -89,7 +119,7 @@ function ManageBranchesPageContent() {
   const handleAddBranch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBranchName.trim()) {
-      alert("지점 이름을 입력해주세요.");
+      alert(MESSAGES.INPUT_REQUIRED);
       return;
     }
     try {
@@ -98,7 +128,7 @@ function ManageBranchesPageContent() {
       await fetchBranches();
     } catch (error) {
       console.error("Failed to add branch:", error);
-      alert(error instanceof Error ? error.message : "지점을 추가할 수 없습니다.");
+      alert(error instanceof Error ? error.message : MESSAGES.ADD_ERROR);
     }
   };
 
@@ -114,7 +144,7 @@ function ManageBranchesPageContent() {
 
   const handleSaveEdit = async (id: string, branchId: string) => {
     if (!editingBranchName.trim()) {
-      alert("지점 이름을 입력해주세요.");
+      alert(MESSAGES.INPUT_REQUIRED);
       return;
     }
     try {
@@ -123,18 +153,18 @@ function ManageBranchesPageContent() {
       handleCancelEdit();
     } catch (error) {
       console.error("Failed to update branch:", error);
-      alert(error instanceof Error ? error.message : "지점을 수정할 수 없습니다.");
+      alert(error instanceof Error ? error.message : MESSAGES.UPDATE_ERROR);
     }
   };
 
   const handleDeleteBranch = async (id: string, branchName: string) => {
-    if (window.confirm(`정말로 지점 "${branchName}"을(를) 삭제하시겠습니까?`)) {
+    if (window.confirm(MESSAGES.DELETE_CONFIRM(branchName))) {
       try {
         await deleteBranch(id);
         await fetchBranches();
       } catch (error) {
         console.error("Failed to delete branch:", error);
-        alert("지점을 삭제할 수 없습니다.");
+        alert(MESSAGES.DELETE_ERROR);
       }
     }
   };
@@ -143,42 +173,42 @@ function ManageBranchesPageContent() {
     <main className="flex min-h-screen flex-col items-center p-12 bg-gray-100 text-gray-800">
       {loadingUser ? (
         <div className="flex items-center justify-center">
-          <p>권한 확인 중...</p>
+          <p>{MESSAGES.AUTH_CHECKING}</p>
         </div>
       ) : !isAuthorized ? (
         <div className="flex items-center justify-center">
-          <p>접근 권한이 없습니다.</p>
+          <p>{MESSAGES.NO_ACCESS}</p>
         </div>
       ) : (
         <div className="w-full max-w-4xl">
         <div className="flex justify-start items-center mb-8">
-            <Link href="/admin" className="text-blue-600 hover:text-blue-800">
-                ← 관리자 메뉴로 돌아가기
+            <Link href="/admin" className={BUTTON_STYLES.LINK}>
+                {MESSAGES.BACK}
             </Link>
         </div>
-        <h1 className="text-4xl font-bold mb-8 text-gray-800">지점 관리</h1>
+        <h1 className="text-4xl font-bold mb-8 text-gray-800">{MESSAGES.TITLE}</h1>
         
         {/* Add Branch Form */}
         <div className="w-full mb-8 p-6 bg-white rounded-lg shadow-md">
-          <h2 className="text-2xl font-semibold mb-4 text-gray-700">새 지점 추가</h2>
+          <h2 className="text-2xl font-semibold mb-4 text-gray-700">{MESSAGES.NEW_BRANCH_TITLE}</h2>
           <form onSubmit={handleAddBranch} className="flex space-x-4">
             <input 
               type="text" 
-              placeholder="새 지점 이름" 
+              placeholder={MESSAGES.NEW_BRANCH_PLACEHOLDER} 
               value={newBranchName}
               onChange={(e) => setNewBranchName(e.target.value)}
               className="flex-grow p-2 border rounded-md"
               required
             />
-            <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">지점 추가</button>
+            <button type="submit" className={BUTTON_STYLES.PRIMARY}>{MESSAGES.NEW_BRANCH_ADD}</button>
           </form>
         </div>
 
         {/* Branch List */}
         <div className="w-full bg-white rounded-lg shadow-md overflow-hidden">
-          <h2 className="text-2xl font-semibold p-6 text-gray-700">지점 목록</h2>
+          <h2 className="text-2xl font-semibold p-6 text-gray-700">{MESSAGES.LIST_TITLE}</h2>
           {loading ? (
-            <p className="p-6">지점 목록을 불러오는 중...</p>
+            <p className="p-6">{MESSAGES.LOADING_BRANCHES}</p>
           ) : (
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">

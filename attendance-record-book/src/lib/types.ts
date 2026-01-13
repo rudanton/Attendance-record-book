@@ -21,6 +21,7 @@ export interface Attendance {
   id: string;             // 기록 고유 ID
   userId: string;         // users 컬렉션 참조 ID
   userName: string;       // 가독성을 위한 이름 복사본
+  branchId: string;       // 지점 ID
   date: string;           // 날짜 (YYYY-MM-DD)
   checkIn: Timestamp;     // 출근 시간
   checkOut: Timestamp | null; // 퇴근 시간
@@ -32,6 +33,7 @@ export interface Attendance {
 };
 
 export interface Branch {
+  id: string;             // Firestore 문서 ID
   branchId: string;       // 지점 고유 ID
   branchName: string;     // 지점명 (예: "강남점", "홍대점")
 }
@@ -45,7 +47,7 @@ export interface AuditLogEntry {
   branchId: string;
   resourceType: 'attendance' | 'user' | 'branch';
   resourceId: string;
-  action: 'create' | 'update' | 'delete' | 'reactivate' | 'deactivate';
+  action: 'create' | 'update' | 'delete' | 'reactivate' | 'deactivate' | 'auto-close';
   actorId?: string | null;
   actorName?: string | null;
   changes?: Record<string, AuditChangeField>;

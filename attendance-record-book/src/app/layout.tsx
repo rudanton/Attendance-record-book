@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+
+import AdminSessionWatcher from "@/components/admin/AdminSessionWatcher";
+
 import "./globals.css";
 import "bootstrap/dist/css/bootstrap.min.css";
-import AdminSessionWatcher from "@/components/admin/AdminSessionWatcher";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -17,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className={inter.variable}>
+    <html lang="ko">
       <body className={inter.className}>
         <AdminSessionWatcher />
         {children}

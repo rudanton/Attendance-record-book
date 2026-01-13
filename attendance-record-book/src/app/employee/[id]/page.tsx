@@ -1,12 +1,29 @@
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useCallback,useEffect, useState } from 'react';
 import Link from 'next/link';
-import { autoCloseLongSessions, getMonthlyAttendance, updateAttendanceRecord } from '@/lib/attendanceService';
-import { Attendance } from '@/lib/types';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+
 import { differenceInMinutes } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
+
+import { autoCloseLongSessions, getMonthlyAttendance, updateAttendanceRecord } from '@/lib/attendanceService';
+import { Attendance } from '@/lib/types';
+
+// ===== Constants =====
+const STORAGE_KEYS = {
+  SELECTED_BRANCH: 'selectedBranchId',
+};
+
+const MESSAGES = {
+  BACK: '← 대시보드로 돌아가기',
+  TITLE_SUFFIX: '직원 월별 출근 기록',
+  LOADING: '월별 기록을 불러오는 중...',
+  NO_RECORDS: '해당 월의 출근 기록이 없습니다.',
+  FETCH_ERROR: '월별 출근 기록을 불러올 수 없습니다.',
+  CHECKIN_REQUIRED: '출근 시간은 필수입니다.',
+  UPDATE_ERROR: '기록을 업데이트할 수 없습니다.',
+};
 
 // Helper to format Firebase Timestamp to HH:mm string
 const formatTimestampToTime = (timestamp: Timestamp | null): string => {
@@ -51,8 +68,7 @@ export default function EmployeeDetailPage() {
   const [editingFormData, setEditingFormData] = useState<Partial<Attendance>>({});
 
   useEffect(() => {
-    // localStorage에서 branchId 가져오기
-    const storedBranchId = localStorage.getItem('selectedBranchId');
+    const storedBranchId = localStorage.getItem(STORAGE_KEYS.SELECTED_BRANCH);
     if (storedBranchId) {
       setBranchId(storedBranchId);
     }
@@ -67,7 +83,7 @@ export default function EmployeeDetailPage() {
       setAttendanceRecords(records);
     } catch (error) {
       console.error("Failed to fetch monthly attendance:", error);
-      alert("월별 출근 기록을 불러올 수 없습니다.");
+      alert(MESSAGES.FETCH_ERROR);
     } finally {
       setLoading(false);
     }
@@ -116,7 +132,7 @@ export default function EmployeeDetailPage() {
   const handleSaveEdit = async (recordId: string) => {
     if (!branchId) return;
     if (!editingFormData.checkIn) {
-      alert('출근 시간은 필수입니다.');
+      alert(MESSAGES.CHECKIN_REQUIRED);
       return;
     }
     try {
@@ -125,7 +141,7 @@ export default function EmployeeDetailPage() {
       handleCancelEdit();
     } catch (error) {
       console.error("Failed to update record:", error);
-      alert(error instanceof Error ? error.message : "기록을 업데이트할 수 없습니다.");
+      alert(error instanceof Error ? error.message : MESSAGES.UPDATE_ERROR);
     }
   };
 
@@ -157,12 +173,12 @@ export default function EmployeeDetailPage() {
   const handleAdd30Minutes = () => {
     if (!editingFormData.checkOut) {
       if (editingFormData.checkIn) {
-        const newCheckOut = new Date((editingFormData.checkIn as Timestamp).toDate());
+        const newCheckOut = new Date((editingFormData.checkIn).toDate());
         newCheckOut.setMinutes(newCheckOut.getMinutes() + 30);
         setEditingFormData(prev => ({ ...prev, checkOut: Timestamp.fromDate(newCheckOut) }));
       }
     } else {
-      const currentCheckOut = (editingFormData.checkOut as Timestamp).toDate();
+      const currentCheckOut = (editingFormData.checkOut).toDate();
       currentCheckOut.setMinutes(currentCheckOut.getMinutes() + 30);
       setEditingFormData(prev => ({ ...prev, checkOut: Timestamp.fromDate(currentCheckOut) }));
     }
@@ -173,7 +189,7 @@ export default function EmployeeDetailPage() {
     const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
     if (!currentRecord) return;
 
-    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []) as Attendance['breaks'])];
+    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []))];
     if (!existingBreaks[breakIndex]) return;
 
     const originalTimestamp = field === 'start' ? existingBreaks[breakIndex].start : existingBreaks[breakIndex].end;
@@ -194,7 +210,7 @@ export default function EmployeeDetailPage() {
     if (!currentRecord) return;
 
     const checkInTs = (editingFormData.checkIn as Timestamp) || currentRecord.checkIn;
-    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []) as Attendance['breaks'])];
+    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []))];
     
     // Create a new break starting 1 hour after check-in, 30 minutes duration
     const defaultStart = new Date(checkInTs.toDate());
@@ -215,7 +231,7 @@ export default function EmployeeDetailPage() {
     const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
     if (!currentRecord) return;
 
-    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []) as Attendance['breaks'])];
+    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []))];
     existingBreaks.splice(breakIndex, 1);
     setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
   };
@@ -226,8 +242,8 @@ export default function EmployeeDetailPage() {
 
   return (
     <main className="flex min-h-screen flex-col items-center p-12 bg-gray-100 text-gray-800">
-      <Link href="/" className="self-start text-blue-600 hover:text-blue-800 mb-4">← 대시보드로 돌아가기</Link>
-      <h1 className="text-4xl font-bold mb-8">{employeeName} 직원 월별 출근 기록</h1>
+      <Link href="/" className="self-start text-blue-600 hover:text-blue-800 mb-4">{MESSAGES.BACK}</Link>
+      <h1 className="text-4xl font-bold mb-8">{employeeName} {MESSAGES.TITLE_SUFFIX}</h1>
 
       <div className="flex items-center space-x-4 mb-6">
         <button onClick={goToPreviousMonth} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">이전 달</button>
@@ -246,7 +262,7 @@ export default function EmployeeDetailPage() {
 
       <div className="w-full max-w-7xl bg-white rounded-lg shadow-md overflow-x-auto">
         {loading ? (
-          <p className="p-6 text-center">월별 기록을 불러오는 중...</p>
+          <p className="p-6 text-center">{MESSAGES.LOADING}</p>
         ) : (
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -306,7 +322,7 @@ export default function EmployeeDetailPage() {
                     <td className="px-6 py-4 text-sm text-gray-500 w-80">
                       {editingRecordId === record.id ? (
                         <div className="space-y-2">
-                          {((editingFormData.breaks || record.breaks || []) as Attendance['breaks']).map((b, index) => (
+                          {((editingFormData.breaks || record.breaks || [])).map((b, index) => (
                             <div key={index} className="flex items-center space-x-2 bg-gray-50 p-2 rounded">
                               <input
                                 type="time"
@@ -373,7 +389,7 @@ export default function EmployeeDetailPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">해당 월의 출근 기록이 없습니다.</td>
+                  <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">{MESSAGES.NO_RECORDS}</td>
                 </tr>
               )}
             </tbody>

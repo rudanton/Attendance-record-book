@@ -1,7 +1,9 @@
 // src/lib/employeeService.ts
+import { addDoc, collection, doc, getDocs,query, Timestamp, updateDoc, where } from 'firebase/firestore';
+
 import { db } from '@/firebase/config';
-import { logAudit, buildChanges } from './auditLogService';
-import { collection, addDoc, updateDoc, doc, Timestamp, query, where, getDocs } from 'firebase/firestore';
+
+import { buildChanges,logAudit } from './auditLogService';
 import { User } from './types';
 
 /**
@@ -10,11 +12,11 @@ import { User } from './types';
  * @param employeeData Partial User object containing name, role, hourlyRate.
  * @returns Promise<User> The added user with generated UID and joinedAt timestamp.
  */
-export async function addEmployee(branchId: string, employeeData: Omit<User, 'uid' | 'branchId' | 'isActive' | 'joinedAt'>): Promise<User> {
+export async function addEmployee(branchId: string, employeeData: Omit<User, 'uid' | 'branchIds' | 'isActive' | 'joinedAt'>): Promise<User> {
   try {
     const newUser: Omit<User, 'uid'> = {
       ...employeeData,
-      branchId, // Add branchId here
+      branchIds: [branchId], // Add branchIds here (admin can manage multiple branches)
       isActive: true,
       joinedAt: Timestamp.now(),
     };

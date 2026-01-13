@@ -1,6 +1,8 @@
-import { db, auth } from '@/firebase/config';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { Attendance, AuditLogEntry, AuditChangeField } from './types';
+
+import { auth,db } from '@/firebase/config';
+
+import { AuditChangeField,AuditLogEntry } from './types';
 
 export function buildChanges(before: Record<string, any>, afterUpdates: Record<string, any>): Record<string, AuditChangeField> {
   const changes: Record<string, AuditChangeField> = {};

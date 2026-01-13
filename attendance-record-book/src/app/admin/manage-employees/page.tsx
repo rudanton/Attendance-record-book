@@ -1,15 +1,42 @@
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
-import { User, Branch } from '@/lib/types';
+import { useCallback,useEffect, useState } from 'react';
+import Link from 'next/link';
+
+import AdminRouteGuard from '@/components/admin/AdminRouteGuard';
+import { getAllBranches } from '@/lib/branchService'; // Import branch service
 import { 
-  getAllEmployees, 
   deleteEmployee, 
+  getAllEmployees, 
   reactivateEmployee
 } from '@/lib/employeeService';
-import { getAllBranches } from '@/lib/branchService'; // Import branch service
-import AdminRouteGuard from '@/components/admin/AdminRouteGuard';
-import Link from 'next/link';
+import { Branch,User } from '@/lib/types';
+
+// ===== Constants =====
+const STORAGE_KEYS = {
+  SELECTED_BRANCH: 'selectedBranchId',
+};
+
+const MESSAGES = {
+  TITLE: '직원 목록 관리',
+  BACK: '← 관리자 메뉴로 돌아가기',
+  CURRENT_BRANCH: '현재 지점:',
+  LOADING: '초기 데이터를 불러오는 중...',
+  NO_BRANCH_TITLE: '등록된 지점이 없습니다.',
+  NO_BRANCH_DESC: '지점 관리에 접속하여 먼저 지점을 추가해주세요.',
+  NO_BRANCH_CTA: '지점 관리로 이동',
+  TAB_ACTIVE: (count: number) => `재직중인 직원 (${count})`,
+  TAB_INACTIVE: (count: number) => `퇴사한 직원 (${count})`,
+  FETCH_ERROR: '직원 목록을 불러올 수 없습니다.',
+  TERMINATE_CONFIRM: '정말로 이 직원을 퇴사 처리하시겠습니까?',
+  REACTIVATE_CONFIRM: '정말로 이 직원을 복귀 처리하시겠습니까?',
+  TERMINATE_ERROR: '직원을 퇴사 처리할 수 없습니다.',
+  REACTIVATE_ERROR: '직원을 복귀 처리할 수 없습니다.',
+};
+
+const BUTTON_STYLES = {
+  LINK: 'text-blue-600 hover:text-blue-800',
+};
 
 function ManageEmployeesPageContent() {
   const [employees, setEmployees] = useState<User[]>([]);
@@ -28,7 +55,7 @@ function ManageEmployeesPageContent() {
       const fetchedBranches = await getAllBranches();
       setBranches(fetchedBranches);
 
-      const storedBranchId = localStorage.getItem('selectedBranchId');
+      const storedBranchId = localStorage.getItem(STORAGE_KEYS.SELECTED_BRANCH);
       if (storedBranchId && fetchedBranches.some(b => b.branchId === storedBranchId)) {
         setSelectedBranchId(storedBranchId);
         setSelectedBranchName(fetchedBranches.find(b => b.branchId === storedBranchId)?.branchName || null);
@@ -36,7 +63,7 @@ function ManageEmployeesPageContent() {
         // If stored ID is invalid or not found, select the first branch
         setSelectedBranchId(fetchedBranches[0].branchId);
         setSelectedBranchName(fetchedBranches[0].branchName);
-        localStorage.setItem('selectedBranchId', fetchedBranches[0].branchId);
+        localStorage.setItem(STORAGE_KEYS.SELECTED_BRANCH, fetchedBranches[0].branchId);
       }
       setInitialLoadComplete(true);
     }
@@ -55,7 +82,7 @@ function ManageEmployeesPageContent() {
       setEmployees(allEmployees);
     } catch (error) {
       console.error("Failed to fetch employees:", error);
-      alert("직원 목록을 불러올 수 없습니다.");
+      alert(MESSAGES.FETCH_ERROR);
     } finally {
       setLoading(false);
     }
@@ -71,31 +98,31 @@ function ManageEmployeesPageContent() {
     const newBranchId = e.target.value;
     setSelectedBranchId(newBranchId);
     setSelectedBranchName(branches.find(b => b.branchId === newBranchId)?.branchName || null);
-    localStorage.setItem('selectedBranchId', newBranchId);
+    localStorage.setItem(STORAGE_KEYS.SELECTED_BRANCH, newBranchId);
   };
 
   const handleDeleteEmployee = async (uid: string) => {
     if (!selectedBranchId) return;
-    if (window.confirm("정말로 이 직원을 퇴사 처리하시겠습니까?")) {
+    if (window.confirm(MESSAGES.TERMINATE_CONFIRM)) {
       try {
         await deleteEmployee(selectedBranchId, uid);
         await fetchEmployees();
       } catch (error) {
         console.error("Failed to deactivate employee:", error);
-        alert("직원을 퇴사 처리할 수 없습니다.");
+        alert(MESSAGES.TERMINATE_ERROR);
       }
     }
   };
 
   const handleReactivateEmployee = async (uid: string) => {
     if (!selectedBranchId) return;
-    if (window.confirm("정말로 이 직원을 복귀 처리하시겠습니까?")) {
+    if (window.confirm(MESSAGES.REACTIVATE_CONFIRM)) {
       try {
         await reactivateEmployee(selectedBranchId, uid);
         await fetchEmployees();
       } catch (error) {
         console.error("Failed to reactivate employee:", error);
-        alert("직원을 복귀 처리할 수 없습니다.");
+        alert(MESSAGES.REACTIVATE_ERROR);
       }
     }
   };
@@ -114,7 +141,7 @@ function ManageEmployeesPageContent() {
   if (!initialLoadComplete) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-100 text-gray-800">
-        <p>초기 데이터를 불러오는 중...</p>
+        <p>{MESSAGES.LOADING}</p>
       </main>
     );
   }
@@ -122,11 +149,11 @@ function ManageEmployeesPageContent() {
   if (branches.length === 0) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-24 bg-gray-100 text-gray-800 text-center">
-        <h1 className="text-4xl font-bold mb-4">등록된 지점이 없습니다.</h1>
-        <p className="text-xl mb-8">지점 관리에 접속하여 먼저 지점을 추가해주세요.</p>
+        <h1 className="text-4xl font-bold mb-4">{MESSAGES.NO_BRANCH_TITLE}</h1>
+        <p className="text-xl mb-8">{MESSAGES.NO_BRANCH_DESC}</p>
         <Link href="/admin/manage-branches">
           <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition-colors duration-300">
-            지점 관리로 이동
+            {MESSAGES.NO_BRANCH_CTA}
           </button>
         </Link>
       </main>
@@ -137,11 +164,11 @@ function ManageEmployeesPageContent() {
     <main className="flex min-h-screen flex-col items-center p-12 bg-gray-100">
       <div className="w-full max-w-4xl">
         <div className="flex justify-between items-center mb-8">
-            <Link href="/admin" className="text-blue-600 hover:text-blue-800">
-                ← 관리자 메뉴로 돌아가기
+          <Link href="/admin" className={BUTTON_STYLES.LINK}>
+            {MESSAGES.BACK}
             </Link>
             <div className="flex items-center space-x-2">
-                <label htmlFor="branch-select" className="text-sm font-medium text-gray-700">현재 지점:</label>
+            <label htmlFor="branch-select" className="text-sm font-medium text-gray-700">{MESSAGES.CURRENT_BRANCH}</label>
                 <select 
                     id="branch-select" 
                     value={selectedBranchId || ''} 
@@ -155,17 +182,17 @@ function ManageEmployeesPageContent() {
             </div>
         </div>
         <h1 className="text-4xl font-bold mb-8 text-gray-800">
-            {selectedBranchName ? `${selectedBranchName} - ` : ''}직원 목록 관리
+          {selectedBranchName ? `${selectedBranchName} - ` : ''}{MESSAGES.TITLE}
         </h1>
         
         {/* Tabs */}
         <div className="border-b border-gray-200 mb-[-1px]">
           <nav className="-mb-px flex space-x-2" aria-label="Tabs">
             <button onClick={() => setActiveTab('active')} className={tabClass('active')}>
-              재직중인 직원 ({activeEmployees.length})
+              {MESSAGES.TAB_ACTIVE(activeEmployees.length)}
             </button>
             <button onClick={() => setActiveTab('inactive')} className={tabClass('inactive')}>
-              퇴사한 직원 ({inactiveEmployees.length})
+              {MESSAGES.TAB_INACTIVE(inactiveEmployees.length)}
             </button>
           </nav>
         </div>
