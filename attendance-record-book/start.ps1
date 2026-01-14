@@ -64,10 +64,11 @@ if ($portInUse) {
     Start-Sleep -Seconds 2
 }
 
-Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "npm run dev > npm.log 2>&1" -WorkingDirectory $PSScriptRoot -NoNewWindow -Wait
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "npm run dev > npm.log 2>&1" -WorkingDirectory $PSScriptRoot
 
-# Check if npm dev is still running (no errors)
-Start-Sleep -Seconds 3
+# npm dev가 시작될 때까지 대기
+Start-Sleep -Seconds 5
+
 $nodeProcess = Get-Process node -ErrorAction SilentlyContinue
 if ($nodeProcess) {
     Write-Host "Opening browser..." -ForegroundColor Cyan
