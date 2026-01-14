@@ -64,18 +64,26 @@ if ($portInUse) {
     Start-Sleep -Seconds 2
 }
 
-Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "npm run dev > npm.log 2>&1 && pause" -WorkingDirectory $PSScriptRoot -NoNewWindow
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "npm run dev > npm.log 2>&1" -WorkingDirectory $PSScriptRoot -NoNewWindow -Wait
 
-Write-Host "Server started. Check npm.log for details if there are issues." -ForegroundColor Yellow
-Start-Sleep -Seconds 5
-
-Write-Host "Opening browser..." -ForegroundColor Cyan
-Start-Process "http://localhost:3000"
-
-Write-Host ""
-Write-Host "================================================" -ForegroundColor Green
-Write-Host "   Server started successfully!" -ForegroundColor Green
-Write-Host "   Access at http://localhost:3000" -ForegroundColor Green
-Write-Host "================================================" -ForegroundColor Green
-Write-Host ""
-Write-Host ""
+# Check if npm dev is still running (no errors)
+Start-Sleep -Seconds 3
+$nodeProcess = Get-Process node -ErrorAction SilentlyContinue
+if ($nodeProcess) {
+    Write-Host "Opening browser..." -ForegroundColor Cyan
+    Start-Process "http://localhost:3000"
+    
+    Write-Host ""
+    Write-Host "================================================" -ForegroundColor Green
+    Write-Host "   Server started successfully!" -ForegroundColor Green
+    Write-Host "   Access at http://localhost:3000" -ForegroundColor Green
+    Write-Host "================================================" -ForegroundColor Green
+    Write-Host ""
+    exit 0
+} else {
+    Write-Host "[ERROR] Server failed to start. Check npm.log for details." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Closing in 10 seconds..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 10
+    exit 1
+}
