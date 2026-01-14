@@ -76,4 +76,3 @@ Write-Host "   웹앱이 시작되었습니다!" -ForegroundColor Green
 Write-Host "   http://localhost:3000 에서 접속 가능합니다." -ForegroundColor Green
 Write-Host "================================================" -ForegroundColor Green
 Write-Host ""
-Read-Host "Enter 키를 눌러 종료"
