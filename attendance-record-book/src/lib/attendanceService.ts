@@ -167,7 +167,7 @@ export async function autoCloseLongSessions(branchId: string): Promise<void> {
         isAutoClosed: true,
         autoClosedAt: now,
       } as Record<string, any>),
-    }).catch(err => console.error('Failed to log audit for auto-close:', err));
+    }).catch(err => console.debug('Audit log skipped:', err instanceof Error ? err.message : 'Unknown error'));
   }
 }
 
@@ -462,7 +462,10 @@ export async function updateAttendanceRecord(branchId: string, recordId: string,
         resourceId: recordId,
         action: 'update',
         changes,
-      }).catch(error => console.error("Failed to log audit for attendance update:", error));
+      }).catch(error => {
+        // Silently ignore audit log failures - they shouldn't affect the main operation
+        console.debug("Audit log skipped:", error instanceof Error ? error.message : "Unknown error");
+      });
     }
   } catch (error) {
     console.error("Error updating attendance record: ", error);
@@ -554,7 +557,7 @@ export async function addAttendanceRecord(branchId: string, newRecordData: {
         isModified: true,
         ...workMinutes,
       }),
-    }).catch(error => console.error("Failed to log audit for attendance creation:", error));
+    }).catch(error => console.debug('Audit log skipped:', error instanceof Error ? error.message : 'Unknown error'));
   } catch (error) {
     console.error("Error adding attendance record: ", error);
     throw new Error("Failed to add attendance record.");

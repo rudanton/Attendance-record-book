@@ -22,13 +22,19 @@ export function buildChanges(before: Record<string, any>, afterUpdates: Record<s
 }
 
 export async function logAudit(entry: Omit<AuditLogEntry, 'timestamp' | 'actorId' | 'actorName'> & Partial<Pick<AuditLogEntry, 'actorId' | 'actorName'>>): Promise<void> {
-  const payload: AuditLogEntry = {
-    ...entry,
-    actorId: entry.actorId ?? auth.currentUser?.uid ?? null,
-    actorName: entry.actorName ?? auth.currentUser?.displayName ?? null,
-    timestamp: serverTimestamp(),
-  };
-  await addDoc(collection(db, 'auditLogs'), payload);
+  try {
+    const payload: AuditLogEntry = {
+      ...entry,
+      actorId: entry.actorId ?? auth.currentUser?.uid ?? null,
+      actorName: entry.actorName ?? auth.currentUser?.displayName ?? null,
+      timestamp: serverTimestamp(),
+    };
+    await addDoc(collection(db, 'auditLogs'), payload);
+  } catch (error) {
+    // Silently fail if audit logging fails (e.g., permission denied)
+    // This prevents blocking main operations when audit logs can't be written
+    console.debug('Audit log failed:', error instanceof Error ? error.message : 'Unknown error');
+  }
 }
 
 export const __testables = {

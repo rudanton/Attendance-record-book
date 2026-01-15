@@ -41,7 +41,7 @@ export async function addBranch(branchName: string): Promise<Branch> {
     resourceId: docRef.id,
     action: 'create',
     changes: buildChanges({}, { branchId, branchName }),
-  }).catch(error => console.error("Failed to log audit for branch creation:", error));
+  }).catch(error => console.debug('Audit log skipped:', error instanceof Error ? error.message : 'Unknown error'));
   
   return { id: docRef.id, branchId, branchName };
 }
@@ -68,7 +68,7 @@ export async function updateBranch(id: string, branchId: string, newBranchName: 
     resourceId: id,
     action: 'update',
     changes: buildChanges({}, updates),
-  }).catch(error => console.error("Failed to log audit for branch update:", error));
+  }).catch(error => console.debug('Audit log skipped:', error instanceof Error ? error.message : 'Unknown error'));
 }
 
 /**
@@ -88,7 +88,7 @@ export async function deleteBranch(id: string): Promise<void> {
       resourceId: id,
       action: 'delete',
       changes: buildChanges({}, {}),
-    }).catch(error => console.error("Failed to log audit for branch deletion:", error));
+    }).catch(error => console.debug('Audit log skipped:', error instanceof Error ? error.message : 'Unknown error'));
   } catch (error) {
     console.error("Error deleting branch:", error);
     throw new Error("지점을 삭제할 수 없습니다.");

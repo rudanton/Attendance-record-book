@@ -21,40 +21,26 @@ if (-not (Test-Path ".env.local")) {
     exit 1
 }
 
-Write-Host "[1/4] Updating repository..." -ForegroundColor Cyan
+Write-Host "[1/3] Updating repository..." -ForegroundColor Cyan
 git pull
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[WARNING] git pull failed. Continuing..." -ForegroundColor Yellow
 }
 Write-Host ""
 
-Write-Host "[2/4] Checking npm configuration..." -ForegroundColor Cyan
-$clearCache = Read-Host "Clear npm cache? (Y/N, default: N)"
-if ($clearCache -eq "Y" -or $clearCache -eq "y") {
-    Write-Host "Clearing npm cache..." -ForegroundColor Yellow
-    npm cache clean --force
-}
-Write-Host ""
-
-Write-Host "[3/4] Installing dependencies..." -ForegroundColor Cyan
+Write-Host "[2/3] Installing dependencies..." -ForegroundColor Cyan
 npm install
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] npm install failed." -ForegroundColor Red
     Write-Host ""
-    Write-Host "Solution:" -ForegroundColor Yellow
-    Write-Host "1. Check internet connection"
-    Write-Host "2. Verify Node.js is installed correctly"
-    Write-Host "   (Type 'node --version' in PowerShell)"
-    Write-Host "3. Run this script again"
-    Write-Host ""
-    Write-Host "Closing in 10 seconds..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 10
+    Write-Host "Closing in 5 seconds..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 5
     exit 1
 }
 Write-Host ""
 
 # Check if port 3000 is already in use
-Write-Host "[4/4] Starting development server..." -ForegroundColor Cyan
+Write-Host "[START] Starting development server..." -ForegroundColor Cyan
 $portInUse = netstat -ano | Select-String ":3000"
 if ($portInUse) {
     Write-Host "[WARNING] Port 3000 is already in use." -ForegroundColor Yellow
@@ -64,27 +50,54 @@ if ($portInUse) {
     Start-Sleep -Seconds 2
 }
 
-Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "npm run dev > npm.log 2>&1" -WorkingDirectory $PSScriptRoot
+# Start npm dev in hidden cmd window (background process)
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm run dev" -WindowStyle Hidden -WorkingDirectory $PSScriptRoot
 
-# npm dev가 시작될 때까지 대기
-Start-Sleep -Seconds 5
+Write-Host ""
+Write-Host "================================================" -ForegroundColor Green
+Write-Host "   Server starting in background..." -ForegroundColor Green
+Write-Host "================================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "Waiting for server to be ready..." -ForegroundColor Cyan
 
-$nodeProcess = Get-Process node -ErrorAction SilentlyContinue
-if ($nodeProcess) {
-    Write-Host "Opening browser..." -ForegroundColor Cyan
-    Start-Process "http://localhost:3000"
-    
+# Wait for port 3000 to be open (faster than waiting for HTTP response)
+$maxAttempts = 30
+$attempt = 0
+$serverReady = $false
+
+while ($attempt -lt $maxAttempts -and -not $serverReady) {
+    try {
+        $conn = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
+        if ($conn) {
+            $serverReady = $true
+        } else {
+            $attempt++
+            Write-Host "." -NoNewline -ForegroundColor Gray
+            Start-Sleep -Milliseconds 500
+        }
+    } catch {
+        $attempt++
+        Write-Host "." -NoNewline -ForegroundColor Gray
+        Start-Sleep -Milliseconds 500
+    }
+}
+
+Write-Host ""
+if ($serverReady) {
     Write-Host ""
     Write-Host "================================================" -ForegroundColor Green
-    Write-Host "   Server started successfully!" -ForegroundColor Green
+    Write-Host "   Server is ready!" -ForegroundColor Green
     Write-Host "   Access at http://localhost:3000" -ForegroundColor Green
     Write-Host "================================================" -ForegroundColor Green
     Write-Host ""
-    exit 0
-} else {
-    Write-Host "[ERROR] Server failed to start. Check npm.log for details." -ForegroundColor Red
+    Write-Host "Opening browser..." -ForegroundColor Cyan
+    Start-Process "http://localhost:3000"
     Write-Host ""
-    Write-Host "Closing in 10 seconds..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 10
-    exit 1
+    Write-Host "Server is running. Use 'stop.bat' to stop it." -ForegroundColor Yellow
+} else {
+    Write-Host ""
+    Write-Host "[WARNING] Server took longer than expected." -ForegroundColor Yellow
+    Write-Host "Opening browser anyway. Server might still be loading..." -ForegroundColor Yellow
+    Start-Process "http://localhost:3000"
 }
+Write-Host ""
