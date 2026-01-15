@@ -142,6 +142,10 @@ export default function HomePage() {
         getRelevantAttendanceRecordsForDashboard(branchId),
         getAllBranches() // Fetch branches to get the name
       ]);
+      
+      // 이름순으로 정렬
+      activeEmployees.sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
+      
       setEmployees(activeEmployees);
       const attendanceMap = new Map(relevantAttendance.map(a => [a.userId, a]));
       setAttendance(attendanceMap);
