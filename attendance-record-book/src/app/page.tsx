@@ -10,9 +10,8 @@ import {
   autoCloseLongSessions,
   clockIn, 
   clockOut, 
-  endBreak, 
-  getRelevantAttendanceRecordsForDashboard,
-  startBreak} from '@/lib/attendanceService';
+  getRelevantAttendanceRecordsForDashboard
+} from '@/lib/attendanceService';
 import { getAllBranches } from '@/lib/branchService'; // To get branch name
 import { getActiveEmployees } from '@/lib/employeeService';
 import { Attendance, BreakRecord,User } from '@/lib/types';
@@ -37,7 +36,6 @@ const TIME_LOCALE = 'ko-KR';
 // 상태 텍스트 및 색상
 const STATUS_CONFIG = {
   NOT_CLOCKED_IN: { text: "출근 전", color: "text-yellow-400" },
-  ON_BREAK: { text: "휴식 중", color: "text-cyan-400" },
   WORKING: { text: "근무 중", color: "text-green-400" },
   CLOCKED_OUT: { text: "퇴근 완료", color: "text-red-400" },
   UNKNOWN: { text: "알 수 없음", color: "text-gray-400" }
@@ -46,9 +44,7 @@ const STATUS_CONFIG = {
 // 버튼 스타일
 const BUTTON_STYLES = {
   CLOCK_IN: "bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500",
-  START_BREAK: "bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500 mb-2",
   CLOCK_OUT: "bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500",
-  END_BREAK: "bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500",
   ADD_EMPLOYEE: "bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md shadow",
   TASK_CHECKLIST: "bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md shadow",
   ADMIN_MENU: "bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-md",
@@ -76,25 +72,14 @@ const MESSAGES = {
   ADMIN_MENU_BUTTON: "관리자 메뉴",
   TODAY_STATUS_LABEL: "오늘의 상태: ",
   CHECK_IN_LABEL: "출근: ",
-  BREAK_START_LABEL: "휴식 시작: ",
   CHECK_OUT_LABEL: "퇴근: ",
   CLOCK_IN_BUTTON: "출근하기",
-  START_BREAK_BUTTON: "휴식 시작",
-  CLOCK_OUT_BUTTON: "퇴근하기",
-  END_BREAK_BUTTON: "휴식 종료"
+  CLOCK_OUT_BUTTON: "퇴근하기"
 };
 
 // ================================
 
 const getNowTimestamp = () => Timestamp.now();
-
-const buildBreaksWithAppend = (existing: BreakRecord[] | undefined, start: Timestamp) => ([...(existing ?? []), { start, end: null }]);
-
-const closeLatestBreak = (existing: BreakRecord[] | undefined, end: Timestamp): BreakRecord[] => {
-  return (existing ?? []).map((item) =>
-    item.start && !item.end ? { ...item, end } : item
-  );
-};
 
 export default function HomePage() {
   const [employees, setEmployees] = useState<User[]>([]);
@@ -267,70 +252,9 @@ export default function HomePage() {
     setClockOutUserId(null);
   };
 
-  const handleStartBreak = async (userId: string) => {
-    if (!selectedBranchId) {
-      alert(MESSAGES.SELECT_BRANCH_FIRST);
-      return;
-    }
-    
-    // 낙관적 업데이트: UI 즉시 반영
-    const now = getNowTimestamp();
-    setAttendance(prev => {
-      const newMap = new Map(prev);
-      const existing = prev.get(userId);
-      if (existing) {
-        const newBreaks = buildBreaksWithAppend(existing.breaks, now);
-        newMap.set(userId, { ...existing, breaks: newBreaks });
-      }
-      return newMap;
-    });
-
-    // 백그라운드에서 실제 데이터 동기화
-    try {
-      await startBreak(selectedBranchId, userId);
-      fetchAllData(selectedBranchId, true); // silent 모드로 조용히 동기화
-    } catch (error) {
-      console.error("Start break failed:", error);
-      alert(error instanceof Error ? error.message : MESSAGES.UNKNOWN_ERROR);
-      fetchAllData(selectedBranchId, true); // 에러 시 실제 데이터로 복구
-    }
-  };
-
-  const handleEndBreak = async (userId: string) => {
-    if (!selectedBranchId) {
-      alert(MESSAGES.SELECT_BRANCH_FIRST);
-      return;
-    }
-    
-    // 낙관적 업데이트: UI 즉시 반영
-    const now = getNowTimestamp();
-    setAttendance(prev => {
-      const newMap = new Map(prev);
-      const existing = prev.get(userId);
-      if (existing && existing.breaks) {
-        const newBreaks = closeLatestBreak(existing.breaks, now);
-        newMap.set(userId, { ...existing, breaks: newBreaks });
-      }
-      return newMap;
-    });
-
-    // 백그라운드에서 실제 데이터 동기화
-    try {
-      await endBreak(selectedBranchId, userId);
-      fetchAllData(selectedBranchId, true); // silent 모드로 조용히 동기화
-    } catch (error) {
-      console.error("End break failed:", error);
-      alert(error instanceof Error ? error.message : MESSAGES.UNKNOWN_ERROR);
-      fetchAllData(selectedBranchId, true); // 에러 시 실제 데이터로 복구
-    }
-  };
-
   const getStatus = (employeeId: string) => {
     const record = attendance.get(employeeId);
     if (!record || !record.checkIn) return STATUS_CONFIG.NOT_CLOCKED_IN;
-    
-    const isOnBreak = record.breaks?.some(b => b.start && !b.end);
-    if (isOnBreak) return STATUS_CONFIG.ON_BREAK;
 
     if (record.checkIn && !record.checkOut) return STATUS_CONFIG.WORKING;
     if (record.checkIn && record.checkOut) return STATUS_CONFIG.CLOCKED_OUT;
@@ -394,8 +318,6 @@ export default function HomePage() {
 
             const canClockIn = !attendanceRecord || !!(attendanceRecord.checkIn && attendanceRecord.checkOut);
             const isClockedIn = !!(attendanceRecord?.checkIn && !attendanceRecord?.checkOut);
-            const openBreak = isClockedIn && attendanceRecord.breaks?.find(b => b.start && !b.end);
-            const isOnBreak = !!openBreak;
 
             return (
               <div key={employee.uid} className="bg-gray-800 rounded-lg shadow-lg p-6 flex flex-col justify-between">
@@ -407,9 +329,6 @@ export default function HomePage() {
                   <div className="text-sm text-gray-500">
                     {attendanceRecord?.checkIn && (
                       <div>{MESSAGES.CHECK_IN_LABEL}{new Date((attendanceRecord.checkIn as any)?.seconds * 1000).toLocaleTimeString(TIME_LOCALE, TIME_FORMAT_OPTIONS)}</div>
-                    )}
-                    {openBreak && (
-                      <div className="text-cyan-400">{MESSAGES.BREAK_START_LABEL}{new Date((openBreak?.start as any)?.seconds * 1000).toLocaleTimeString(TIME_LOCALE, TIME_FORMAT_OPTIONS)}</div>
                     )}
                     {attendanceRecord?.checkOut && (
                       <div>{MESSAGES.CHECK_OUT_LABEL}{new Date((attendanceRecord.checkOut as any)?.seconds * 1000).toLocaleTimeString(TIME_LOCALE, TIME_FORMAT_OPTIONS)}</div>
@@ -427,33 +346,14 @@ export default function HomePage() {
                       {MESSAGES.CLOCK_IN_BUTTON}
                     </button>
                   )}
-                  {/* 근무 중일 때 버튼들 */}
-                  {isClockedIn && !isOnBreak && (
-                    <>
-                      <button
-                        onClick={() => handleStartBreak(employee.uid)}
-                        disabled={refreshing}
-                        className={BUTTON_STYLES.START_BREAK}
-                      >
-                        {MESSAGES.START_BREAK_BUTTON}
-                      </button>
-                      <button
-                        onClick={() => handleClockOut(employee.uid)}
-                        disabled={refreshing}
-                        className={BUTTON_STYLES.CLOCK_OUT}
-                      >
-                        {MESSAGES.CLOCK_OUT_BUTTON}
-                      </button>
-                    </>
-                  )}
-                  {/* 휴식 중일 때 버튼 */}
-                  {isClockedIn && isOnBreak && (
+                  {/* 근무 중일 때 퇴근 버튼 */}
+                  {isClockedIn && (
                     <button
-                      onClick={() => handleEndBreak(employee.uid)}
+                      onClick={() => handleClockOut(employee.uid)}
                       disabled={refreshing}
-                      className={BUTTON_STYLES.END_BREAK}
+                      className={BUTTON_STYLES.CLOCK_OUT}
                     >
-                      {MESSAGES.END_BREAK_BUTTON}
+                      {MESSAGES.CLOCK_OUT_BUTTON}
                     </button>
                   )}
                 </div>
