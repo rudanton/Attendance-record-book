@@ -50,6 +50,7 @@ const BUTTON_STYLES = {
   CLOCK_OUT: "bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500",
   END_BREAK: "bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded transition-colors duration-300 disabled:bg-gray-500",
   ADD_EMPLOYEE: "bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md shadow",
+  TASK_CHECKLIST: "bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md shadow",
   ADMIN_MENU: "bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-md",
   MODAL_CONFIRM: "flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded transition-colors duration-300",
   MODAL_CANCEL: "flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded transition-colors duration-300"
@@ -71,6 +72,7 @@ const MESSAGES = {
   DASHBOARD_TITLE: (branchName: string) => `${branchName} 출퇴근 대시보드`,
   FALLBACK_BRANCH_NAME: "선택된 지점",
   ADD_EMPLOYEE_BUTTON: "신규 직원 추가",
+  TASK_CHECKLIST_BUTTON: "업무 체크리스트",
   ADMIN_MENU_BUTTON: "관리자 메뉴",
   TODAY_STATUS_LABEL: "오늘의 상태: ",
   CHECK_IN_LABEL: "출근: ",
@@ -368,6 +370,12 @@ export default function HomePage() {
             className={BUTTON_STYLES.ADD_EMPLOYEE}
           >
             {MESSAGES.ADD_EMPLOYEE_BUTTON}
+          </Link>
+          <Link
+            href="/tasks"
+            className={BUTTON_STYLES.TASK_CHECKLIST}
+          >
+            {MESSAGES.TASK_CHECKLIST_BUTTON}
           </Link>
           <Link
             href="/admin"
