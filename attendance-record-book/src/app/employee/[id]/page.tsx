@@ -15,6 +15,9 @@ const STORAGE_KEYS = {
   SELECTED_BRANCH: 'selectedBranchId',
 };
 
+const MAX_WORK_HOURS = 20;
+const MAX_WORK_MS = MAX_WORK_HOURS * 60 * 60 * 1000;
+
 const MESSAGES = {
   BACK: '← 대시보드로 돌아가기',
   TITLE_SUFFIX: '직원 월별 출근 기록',
@@ -159,11 +162,18 @@ export default function EmployeeDetailPage() {
       const checkInTs = (editingFormData.checkIn as Timestamp) || currentRecord.checkIn;
       if (checkInTs) {
         const checkInDate = checkInTs.toDate();
-        const checkOutDate = newTimestamp.toDate();
+        let checkOutDate = newTimestamp.toDate();
         if (checkOutDate <= checkInDate) {
           checkOutDate.setDate(checkOutDate.getDate() + 1);
-          newTimestamp = Timestamp.fromDate(checkOutDate);
         }
+        
+        // 근무 시간을 최대 20시간으로 제한
+        const maxCheckOutTime = checkInDate.getTime() + MAX_WORK_MS;
+        if (checkOutDate.getTime() > maxCheckOutTime) {
+          checkOutDate = new Date(maxCheckOutTime);
+        }
+        
+        newTimestamp = Timestamp.fromDate(checkOutDate);
       }
     }
     

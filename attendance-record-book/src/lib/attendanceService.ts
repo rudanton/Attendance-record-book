@@ -113,36 +113,13 @@ export async function autoCloseLongSessions(branchId: string): Promise<void> {
     const attendanceDocRef = doc(db, 'attendance', docSnap.id);
 
     // Base checkout time: check-in + 20h
-    let checkOutTs = Timestamp.fromMillis(checkInMs + TWENTY_HOURS_MS);
+    const checkOutTs = Timestamp.fromMillis(checkInMs + TWENTY_HOURS_MS);
     const breaks = [...(record.breaks || [])];
 
     // Close any open break at checkout time
     const openBreakIndex = breaks.findIndex(_break => _break.end === null);
     if (openBreakIndex !== -1) {
       breaks[openBreakIndex].end = checkOutTs;
-    }
-
-    // Enforce minimum breaks (same logic as manual clock-out)
-    let totalBreakMinutes = 0;
-    breaks.forEach(_break => {
-      if (_break.start && _break.end) {
-        totalBreakMinutes += Math.floor(((_break.end.toDate().getTime() - _break.start.toDate().getTime()) / 60000));
-      }
-    });
-
-    const totalElapsedMinutes = Math.floor((checkOutTs.toDate().getTime() - checkInTs.toDate().getTime()) / 60000);
-    const totalWorkMinutes = totalElapsedMinutes - totalBreakMinutes;
-    const requiredBreakMinutes = totalWorkMinutes >= 8 * 60 ? 60 : totalWorkMinutes >= 4 * 60 ? 30 : 0;
-    if (requiredBreakMinutes > totalBreakMinutes) {
-      const additionalBreakNeeded = requiredBreakMinutes - totalBreakMinutes;
-      const originalCheckOutDate = checkOutTs.toDate();
-      const extendedCheckOutDate = new Date(originalCheckOutDate.getTime() + additionalBreakNeeded * 60000);
-      checkOutTs = Timestamp.fromDate(extendedCheckOutDate);
-
-      breaks.push({
-        start: Timestamp.fromDate(originalCheckOutDate),
-        end: checkOutTs,
-      });
     }
 
     const workMinutes = calculateWorkMinutes(checkInTs, checkOutTs, breaks);

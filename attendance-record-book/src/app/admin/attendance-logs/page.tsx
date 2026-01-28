@@ -21,6 +21,9 @@ const STORAGE_KEYS = {
   SELECTED_BRANCH: 'selectedBranchId',
 };
 
+const MAX_WORK_HOURS = 20;
+const MAX_WORK_MS = MAX_WORK_HOURS * 60 * 60 * 1000;
+
 const MESSAGES = {
   LOADING: '초기 데이터를 불러오는 중...',
   NO_BRANCH_TITLE: '등록된 지점이 없습니다.',
@@ -284,11 +287,18 @@ function AdminAttendanceLogsContent() {
     // 퇴근 시간을 수정하는 경우, 출근 시간보다 이르면 다음날로 간주
     if (name === 'checkOut' && newTimestamp && editingFormData.checkIn) {
       const checkInDate = (editingFormData.checkIn).toDate();
-      const checkOutDate = newTimestamp.toDate();
+      let checkOutDate = newTimestamp.toDate();
       if (checkOutDate <= checkInDate) {
         checkOutDate.setDate(checkOutDate.getDate() + 1);
-        newTimestamp = Timestamp.fromDate(checkOutDate);
       }
+      
+      // 근무 시간을 최대 20시간으로 제한
+      const maxCheckOutTime = checkInDate.getTime() + MAX_WORK_MS;
+      if (checkOutDate.getTime() > maxCheckOutTime) {
+        checkOutDate = new Date(maxCheckOutTime);
+      }
+      
+      newTimestamp = Timestamp.fromDate(checkOutDate);
     }
     
     setEditingFormData(prev => ({ ...prev, [name]: newTimestamp }));
@@ -355,6 +365,16 @@ function AdminAttendanceLogsContent() {
         // 퇴근 시간이 출근 시간보다 이르면 다음날로 간주
         if (checkOutDateTime <= checkInDateTime) {
           checkOutDateTime.setDate(checkOutDateTime.getDate() + 1);
+        }        
+        // 근무 시간을 최대 20시간으로 제한
+        const maxCheckOutTime = checkInDateTime.getTime() + MAX_WORK_MS;
+        if (checkOutDateTime.getTime() > maxCheckOutTime) {
+          checkOutDateTime = new Date(maxCheckOutTime);
+        }        
+        // 근무 시간을 최대 20시간으로 제한
+        const maxCheckOutTime = checkInDateTime.getTime() + MAX_WORK_MS;
+        if (checkOutDateTime.getTime() > maxCheckOutTime) {
+          checkOutDateTime = new Date(maxCheckOutTime);
         }
       }
       
