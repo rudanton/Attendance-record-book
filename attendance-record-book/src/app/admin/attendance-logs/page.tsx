@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Timestamp } from 'firebase/firestore';
 import { utils, writeFile } from 'xlsx';
 
+import TimeInput from '@/components/TimeInput';
 import AdminRouteGuard from '@/components/admin/AdminRouteGuard';
 import { 
   addAttendanceRecord,
@@ -63,10 +64,17 @@ const formatTimestampToDatetimeLocal = (timestamp: Timestamp | null): string => 
 };
 
 // Helper to format Firebase Timestamp to HH:mm string
-const formatTimestampToTime = (timestamp: Timestamp | null): string => {
+const formatTimestampToTime = (timestamp: Timestamp | null | undefined): string => {
   if (!timestamp) return '';
-  const date = timestamp.toDate();
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  try {
+    const date = timestamp.toDate();
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    if (isNaN(hours) || isNaN(minutes)) return '';
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  } catch {
+    return '';
+  }
 };
 
 // Helper to parse datetime-local string to Firebase Timestamp
@@ -77,8 +85,11 @@ const parseDatetimeLocalToTimestamp = (datetimeLocalStr: string): Timestamp | nu
 
 // Helper to parse time string (HH:mm) to Firebase Timestamp, keeping the original date
 const parseTimeToTimestamp = (timeStr: string, originalTimestamp: Timestamp | null, recordDate: string): Timestamp | null => {
-  if (!timeStr) return null;
-  const [hours, minutes] = timeStr.split(':').map(Number);
+  if (!timeStr || !timeStr.includes(':')) return null;
+  const [hoursStr, minutesStr] = timeStr.split(':');
+  const hours = parseInt(hoursStr, 10);
+  const minutes = parseInt(minutesStr, 10);
+  if (isNaN(hours) || isNaN(minutes)) return null;
   const date = originalTimestamp ? originalTimestamp.toDate() : new Date(recordDate);
   date.setHours(hours, minutes, 0, 0);
   return Timestamp.fromDate(date);
@@ -281,24 +292,39 @@ function AdminAttendanceLogsContent() {
     const currentRecord = allRecords.find(r => r.id === editingRecordId);
     if (!currentRecord) return;
     
-    const originalTimestamp = name === 'checkIn' ? currentRecord.checkIn : currentRecord.checkOut;
-    let newTimestamp = parseTimeToTimestamp(value, originalTimestamp, currentRecord.date);
+    // 입력 중일 때는 문자열 그대로 저장
+    setEditingFormData(prev => ({ ...prev, [name]: value }));
+  };
+  
+  const handleTimeBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (!editingRecordId) return;
+    const currentRecord = allRecords.find(r => r.id === editingRecordId);
+    if (!currentRecord) return;
+    
+    // blur 시에 타임스탬프로 변환
+    let newTimestamp = parseTimeToTimestamp(value, null, currentRecord.date);
+    
+    // 유효하지 않으면 원래 값으로 복구
+    if (!newTimestamp) {
+      const originalTimestamp = name === 'checkIn' ? currentRecord.checkIn : currentRecord.checkOut;
+      setEditingFormData(prev => ({ ...prev, [name]: originalTimestamp }));
+      return;
+    }
     
     // 퇴근 시간을 수정하는 경우, 출근 시간보다 이르면 다음날로 간주
     if (name === 'checkOut' && newTimestamp && editingFormData.checkIn) {
-      const checkInDate = (editingFormData.checkIn).toDate();
-      let checkOutDate = newTimestamp.toDate();
-      if (checkOutDate <= checkInDate) {
-        checkOutDate.setDate(checkOutDate.getDate() + 1);
+      const checkInTs = (typeof editingFormData.checkIn === 'string') ? parseTimeToTimestamp(editingFormData.checkIn, null, currentRecord.date) : editingFormData.checkIn;
+      if (checkInTs) {
+        const checkInDate = checkInTs.toDate();
+        const checkOutDate = newTimestamp.toDate();
+        
+        // 퇴근시간이 출근시간보다 이르면 다음날로 처리
+        if (checkOutDate <= checkInDate) {
+          checkOutDate.setDate(checkOutDate.getDate() + 1);
+          newTimestamp = Timestamp.fromDate(checkOutDate);
+        }
       }
-      
-      // 근무 시간을 최대 20시간으로 제한
-      const maxCheckOutTime = checkInDate.getTime() + MAX_WORK_MS;
-      if (checkOutDate.getTime() > maxCheckOutTime) {
-        checkOutDate = new Date(maxCheckOutTime);
-      }
-      
-      newTimestamp = Timestamp.fromDate(checkOutDate);
     }
     
     setEditingFormData(prev => ({ ...prev, [name]: newTimestamp }));
@@ -362,19 +388,10 @@ function AdminAttendanceLogsContent() {
       
       if (checkOutTime) {
         checkOutDateTime = new Date(`${date}T${checkOutTime}:00`);
+        
         // 퇴근 시간이 출근 시간보다 이르면 다음날로 간주
         if (checkOutDateTime <= checkInDateTime) {
           checkOutDateTime.setDate(checkOutDateTime.getDate() + 1);
-        }        
-        // 근무 시간을 최대 20시간으로 제한
-        const maxCheckOutTime = checkInDateTime.getTime() + MAX_WORK_MS;
-        if (checkOutDateTime.getTime() > maxCheckOutTime) {
-          checkOutDateTime = new Date(maxCheckOutTime);
-        }        
-        // 근무 시간을 최대 20시간으로 제한
-        const maxCheckOutTime = checkInDateTime.getTime() + MAX_WORK_MS;
-        if (checkOutDateTime.getTime() > maxCheckOutTime) {
-          checkOutDateTime = new Date(maxCheckOutTime);
         }
       }
       
@@ -531,13 +548,15 @@ function AdminAttendanceLogsContent() {
             <div className="flex flex-col">
                 <label htmlFor="newCheckIn" className="text-sm font-medium text-gray-600 mb-1">출근 시간</label>
                 <input
-                type="time"
+                type="text"
                 name="checkInTime"
                 id="newCheckIn"
                 value={newRecordFormData.checkInTime}
                 onChange={handleNewRecordInputChange}
-                className="p-2 border rounded-md [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
-                placeholder="HH:mm"
+                className="p-2 border rounded-md"
+                placeholder="HH:mm (24h)"
+                pattern="[0-2][0-9]:[0-5][0-9]"
+                maxLength={5}
                 required
                 />
             </div>
@@ -545,13 +564,15 @@ function AdminAttendanceLogsContent() {
                 <label htmlFor="newCheckOut" className="text-sm font-medium text-gray-600 mb-1">퇴근 시간 (선택)</label>
                 <div className="flex items-center space-x-2">
                   <input
-                  type="time"
+                  type="text"
                   name="checkOutTime"
                   id="newCheckOut"
                   value={newRecordFormData.checkOutTime}
                   onChange={handleNewRecordInputChange}
-                  className="p-2 border rounded-md flex-1 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
-                  placeholder="HH:mm"
+                  className="p-2 border rounded-md flex-1"
+                  placeholder="HH:mm (24h)"
+                  pattern="[0-2][0-9]:[0-5][0-9]"
+                  maxLength={5}
                   />
                   <button
                     type="button"
@@ -638,13 +659,11 @@ function AdminAttendanceLogsContent() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.userName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {editingRecordId === record.id ? (
-                            <input
-                            type="time"
-                            name="checkIn"
-                            value={formatTimestampToTime(editingFormData.checkIn as Timestamp)}
-                            onChange={handleFormChange}
-                            className="p-2 border rounded-md w-32 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
-                            placeholder="HH:mm"
+                            <TimeInput
+                              name="checkIn"
+                              value={editingFormData.checkIn}
+                              onChange={handleFormChange}
+                              onBlur={handleTimeBlur}
                             />
                         ) : (
                             record.checkIn ? new Date(record.checkIn.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '-'
@@ -653,13 +672,11 @@ function AdminAttendanceLogsContent() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {editingRecordId === record.id ? (
                             <div className="flex items-center space-x-2">
-                              <input
-                              type="time"
-                              name="checkOut"
-                              value={formatTimestampToTime(editingFormData.checkOut as Timestamp)}
-                              onChange={handleFormChange}
-                              className="p-2 border rounded-md w-32 [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden"
-                              placeholder="HH:mm"
+                              <TimeInput
+                                name="checkOut"
+                                value={editingFormData.checkOut}
+                                onChange={handleFormChange}
+                                onBlur={handleTimeBlur}
                               />
                               <button
                                 type="button"

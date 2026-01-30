@@ -381,42 +381,8 @@ export async function updateAttendanceRecord(branchId: string, recordId: string,
 
     if (updatedFields.checkIn || updatedFields.checkOut || updatedFields.breaks) {
       const calculatedCheckIn = newCheckIn instanceof Timestamp ? newCheckIn : Timestamp.fromDate(newCheckIn as Date);
-      let calculatedCheckOut = newCheckOut instanceof Timestamp ? newCheckOut : (newCheckOut ? Timestamp.fromDate(newCheckOut as Date) : null);
+      const calculatedCheckOut = newCheckOut instanceof Timestamp ? newCheckOut : (newCheckOut ? Timestamp.fromDate(newCheckOut as Date) : null);
       const finalBreaks = [...newBreaks];
-
-      // If checkout exists, ensure minimum breaks: 8h+ => 60m, 4h+ => 30m
-      if (calculatedCheckOut) {
-        // Calculate current break minutes
-        let totalBreakMinutes = 0;
-        finalBreaks.forEach(_break => {
-          if (_break.start && _break.end) {
-            totalBreakMinutes += Math.floor(((_break.end.toDate().getTime() - _break.start.toDate().getTime()) / 60000));
-          }
-        });
-
-        // Calculate total work time (elapsed time - break time)
-        const totalElapsedMinutes = Math.floor((calculatedCheckOut.toDate().getTime() - calculatedCheckIn.toDate().getTime()) / 60000);
-        const totalWorkMinutes = totalElapsedMinutes - totalBreakMinutes;
-
-        const requiredBreakMinutes = totalWorkMinutes >= 8 * 60 ? 60 : totalWorkMinutes >= 4 * 60 ? 30 : 0;
-        if (requiredBreakMinutes > totalBreakMinutes) {
-          // Extend checkout time to meet required break minutes
-          const additionalBreakNeeded = requiredBreakMinutes - totalBreakMinutes;
-          const originalCheckOutDate = calculatedCheckOut.toDate();
-          const extendedCheckOutDate = new Date(originalCheckOutDate.getTime() + additionalBreakNeeded * 60000);
-          calculatedCheckOut = Timestamp.fromDate(extendedCheckOutDate);
-          
-          // Add a synthetic break for the additional time
-          finalBreaks.push({
-            start: Timestamp.fromDate(originalCheckOutDate),
-            end: calculatedCheckOut,
-          });
-          
-          // Update the updatedFields with new checkout and breaks
-          updatedFields.checkOut = calculatedCheckOut;
-          updatedFields.breaks = finalBreaks;
-        }
-      }
 
       workMinutes = calculateWorkMinutes(calculatedCheckIn, calculatedCheckOut, finalBreaks);
     }

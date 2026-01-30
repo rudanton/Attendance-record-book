@@ -7,6 +7,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { differenceInMinutes } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 
+import TimeInput from '@/components/TimeInput';
 import { autoCloseLongSessions, getMonthlyAttendance, updateAttendanceRecord } from '@/lib/attendanceService';
 import { Attendance } from '@/lib/types';
 
@@ -29,16 +30,26 @@ const MESSAGES = {
 };
 
 // Helper to format Firebase Timestamp to HH:mm string
-const formatTimestampToTime = (timestamp: Timestamp | null): string => {
+const formatTimestampToTime = (timestamp: Timestamp | null | undefined): string => {
   if (!timestamp) return '';
-  const date = timestamp.toDate();
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  try {
+    const date = timestamp.toDate();
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    if (isNaN(hours) || isNaN(minutes)) return '';
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  } catch {
+    return '';
+  }
 };
 
 // Helper to parse time string (HH:mm) to Firebase Timestamp, keeping the original date
 const parseTimeToTimestamp = (timeStr: string, originalTimestamp: Timestamp | null, recordDate: string): Timestamp | null => {
-  if (!timeStr) return null;
-  const [hours, minutes] = timeStr.split(':').map(Number);
+  if (!timeStr || !timeStr.includes(':')) return null;
+  const [hoursStr, minutesStr] = timeStr.split(':');
+  const hours = parseInt(hoursStr, 10);
+  const minutes = parseInt(minutesStr, 10);
+  if (isNaN(hours) || isNaN(minutes)) return null;
   const date = originalTimestamp ? originalTimestamp.toDate() : new Date(recordDate);
   date.setHours(hours, minutes, 0, 0);
   return Timestamp.fromDate(date);
@@ -154,26 +165,38 @@ export default function EmployeeDetailPage() {
     const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
     if (!currentRecord) return;
     
-    const originalTimestamp = name === 'checkIn' ? currentRecord.checkIn : currentRecord.checkOut;
-    let newTimestamp = parseTimeToTimestamp(value, originalTimestamp, currentRecord.date);
+    // 입력 중일 때는 문자열 그대로 저장
+    setEditingFormData(prev => ({ ...prev, [name]: value }));
+  };
+  
+  const handleTimeBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (!editingRecordId) return;
+    const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
+    if (!currentRecord) return;
+    
+    // blur 시에 타임스탬프로 변환
+    let newTimestamp = parseTimeToTimestamp(value, null, currentRecord.date);
+    
+    // 유효하지 않으면 원래 값으로 복구
+    if (!newTimestamp) {
+      const originalTimestamp = name === 'checkIn' ? currentRecord.checkIn : currentRecord.checkOut;
+      setEditingFormData(prev => ({ ...prev, [name]: originalTimestamp }));
+      return;
+    }
     
     // 퇴근 시간을 수정하는 경우, 출근 시간보다 이르면 다음날로 간주
     if (name === 'checkOut' && newTimestamp) {
       const checkInTs = (editingFormData.checkIn as Timestamp) || currentRecord.checkIn;
       if (checkInTs) {
         const checkInDate = checkInTs.toDate();
-        let checkOutDate = newTimestamp.toDate();
+        const checkOutDate = newTimestamp.toDate();
+        
+        // 퇴근시간이 출근시간보다 이르면 다음날로 처리
         if (checkOutDate <= checkInDate) {
           checkOutDate.setDate(checkOutDate.getDate() + 1);
+          newTimestamp = Timestamp.fromDate(checkOutDate);
         }
-        
-        // 근무 시간을 최대 20시간으로 제한
-        const maxCheckOutTime = checkInDate.getTime() + MAX_WORK_MS;
-        if (checkOutDate.getTime() > maxCheckOutTime) {
-          checkOutDate = new Date(maxCheckOutTime);
-        }
-        
-        newTimestamp = Timestamp.fromDate(checkOutDate);
       }
     }
     
@@ -202,8 +225,24 @@ export default function EmployeeDetailPage() {
     const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []))];
     if (!existingBreaks[breakIndex]) return;
 
-    const originalTimestamp = field === 'start' ? existingBreaks[breakIndex].start : existingBreaks[breakIndex].end;
-    const newTimestamp = parseTimeToTimestamp(value, originalTimestamp, currentRecord.date);
+    // 입력 중에는 문자열 그대로 저장
+    existingBreaks[breakIndex] = {
+      ...existingBreaks[breakIndex],
+      [field]: value as any
+    };
+    setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
+  };
+  
+  const handleBreakBlur = (breakIndex: number, field: 'start' | 'end', value: string) => {
+    if (!editingRecordId) return;
+    const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
+    if (!currentRecord) return;
+
+    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []))];
+    if (!existingBreaks[breakIndex]) return;
+
+    const originalTimestamp = field === 'start' ? currentRecord.breaks?.[breakIndex]?.start : currentRecord.breaks?.[breakIndex]?.end;
+    const newTimestamp = parseTimeToTimestamp(value, originalTimestamp || null, currentRecord.date);
 
     if (newTimestamp) {
       existingBreaks[breakIndex] = {
@@ -211,6 +250,15 @@ export default function EmployeeDetailPage() {
         [field]: newTimestamp
       };
       setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
+    } else {
+      // 유효하지 않으면 원래 값으로 복구
+      if (originalTimestamp) {
+        existingBreaks[breakIndex] = {
+          ...existingBreaks[breakIndex],
+          [field]: originalTimestamp
+        };
+        setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
+      }
     }
   };
 
@@ -292,13 +340,11 @@ export default function EmployeeDetailPage() {
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{record.date}</td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                       {editingRecordId === record.id ? (
-                        <input
-                          type="time"
+                        <TimeInput
                           name="checkIn"
-                          value={formatTimestampToTime(editingFormData.checkIn as Timestamp)}
+                          value={editingFormData.checkIn}
                           onChange={handleFormChange}
-                          className="p-2 border rounded-md w-32 [&::-webkit-calendar-picker-indicator]:hidden"
-                          placeholder="HH:mm"
+                          onBlur={handleTimeBlur}
                         />
                       ) : (
                         record.checkIn ? new Date(record.checkIn.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '-'
@@ -307,13 +353,11 @@ export default function EmployeeDetailPage() {
                     <td className="px-4 py-4 text-sm text-gray-500">
                       {editingRecordId === record.id ? (
                         <div className="space-y-2">
-                          <input
-                            type="time"
+                          <TimeInput
                             name="checkOut"
-                            value={formatTimestampToTime(editingFormData.checkOut as Timestamp)}
+                            value={editingFormData.checkOut}
                             onChange={handleFormChange}
-                            className="p-2 border rounded-md w-32 [&::-webkit-calendar-picker-indicator]:hidden"
-                            placeholder="HH:mm"
+                            onBlur={handleTimeBlur}
                           />
                           <div className="flex items-center space-x-2 flex-wrap">
                             <button
@@ -334,18 +378,20 @@ export default function EmployeeDetailPage() {
                         <div className="space-y-2">
                           {((editingFormData.breaks || record.breaks || [])).map((b, index) => (
                             <div key={index} className="flex items-center space-x-2 bg-gray-50 p-2 rounded">
-                              <input
-                                type="time"
-                                value={formatTimestampToTime(b.start)}
+                              <TimeInput
+                                name={`break-start-${index}`}
+                                value={b.start}
                                 onChange={(e) => handleBreakChange(index, 'start', e.target.value)}
-                                className="p-1 border rounded w-24 text-xs [&::-webkit-calendar-picker-indicator]:hidden"
+                                onBlur={(e) => handleBreakBlur(index, 'start', e.target.value)}
+                                className="p-1 border rounded w-24 text-xs"
                               />
                               <span>-</span>
-                              <input
-                                type="time"
-                                value={formatTimestampToTime(b.end)}
+                              <TimeInput
+                                name={`break-end-${index}`}
+                                value={b.end}
                                 onChange={(e) => handleBreakChange(index, 'end', e.target.value)}
-                                className="p-1 border rounded w-24 text-xs [&::-webkit-calendar-picker-indicator]:hidden"
+                                onBlur={(e) => handleBreakBlur(index, 'end', e.target.value)}
+                                className="p-1 border rounded w-24 text-xs"
                               />
                               <button
                                 type="button"
