@@ -114,19 +114,12 @@ export async function autoCloseLongSessions(branchId: string): Promise<void> {
 
     // Base checkout time: check-in + 20h
     const checkOutTs = Timestamp.fromMillis(checkInMs + TWENTY_HOURS_MS);
-    const breaks = [...(record.breaks || [])];
 
-    // Close any open break at checkout time
-    const openBreakIndex = breaks.findIndex(_break => _break.end === null);
-    if (openBreakIndex !== -1) {
-      breaks[openBreakIndex].end = checkOutTs;
-    }
-
-    const workMinutes = calculateWorkMinutes(checkInTs, checkOutTs, breaks);
+    // Calculate work minutes without breaks (breaks feature removed)
+    const workMinutes = calculateWorkMinutes(checkInTs, checkOutTs, []);
 
     await updateDoc(attendanceDocRef, {
       checkOut: checkOutTs,
-      breaks,
       ...workMinutes,
       isAutoClosed: true,
       autoClosedAt: now,
@@ -139,7 +132,6 @@ export async function autoCloseLongSessions(branchId: string): Promise<void> {
       action: 'auto-close',
       changes: buildChanges(record as Record<string, any>, {
         checkOut: checkOutTs,
-        breaks,
         ...workMinutes,
         isAutoClosed: true,
         autoClosedAt: now,
@@ -206,16 +198,6 @@ export async function clockIn(branchId: string, userId: string, userName: string
 
 /**
  * Clocks out a user, closing their most recent open session and calculating total work minutes for a specific branch.
- * If total work (excluding breaks) would exceed 8 hours, automatically extends break time to ensure legal compliance.
- * @param branchId The ID of the branch.
- * @param userId The ID of the user clocking out.
- * @returns Promise<void>
- * @throws Will throw an error if the user has no open session to clock out from.
- */
-/**
- * Clocks out a user, closing their most recent open session and calculating total work minutes for a specific branch.
- * For shifts 8+ hours: ensures minimum 1 hour break time (Korean labor law requirement).
- * For shifts under 8 hours: keeps actual break time as-is.
  * @param branchId The ID of the branch.
  * @param userId The ID of the user clocking out.
  * @returns Promise<void>
@@ -229,126 +211,21 @@ export async function clockOut(branchId: string, userId: string): Promise<void> 
   }
 
   const attendanceDocRef = doc(db, 'attendance', openAttendanceId);
-  let checkOutTime = Timestamp.now(); // Current checkout time
+  const checkOutTime = Timestamp.now();
 
-  // Get the record to calculate totalWorkMinutes
+  // Get the record to calculate work minutes
   const docSnap = await getDoc(attendanceDocRef);
   if (!docSnap.exists()) {
     throw new Error("Clock-in record not found while trying to clock out.");
   }
   const record = docSnap.data() as Attendance;
   
-  // Ensure any open break is closed before clocking out
-  const openBreakIndex = record.breaks.findIndex(_break => _break.end === null);
-  if (openBreakIndex !== -1) {
-    record.breaks[openBreakIndex].end = checkOutTime;
-  }
-
-  // Calculate current break minutes
-  let totalBreakMinutes = 0;
-  record.breaks.forEach(_break => {
-    if (_break.start && _break.end) {
-      totalBreakMinutes += Math.floor(((_break.end.toDate().getTime() - _break.start.toDate().getTime()) / 60000));
-    }
-  });
-
-  // Calculate total work time (elapsed time - break time)
-  const checkInDate = record.checkIn.toDate();
-  const totalElapsedMinutes = Math.floor((checkOutTime.toDate().getTime() - checkInDate.getTime()) / 60000);
-  const totalWorkMinutes = totalElapsedMinutes - totalBreakMinutes;
-
-  // Enforce minimum breaks: 8h+ => 60m, 4h+ => 30m
-  const requiredBreakMinutes = totalWorkMinutes >= 8 * 60 ? 60 : totalWorkMinutes >= 4 * 60 ? 30 : 0;
-  if (requiredBreakMinutes > totalBreakMinutes) {
-    const additionalBreakNeeded = requiredBreakMinutes - totalBreakMinutes;
-    const originalCheckOutDate = checkOutTime.toDate();
-    const extendedCheckOutDate = new Date(originalCheckOutDate.getTime() + additionalBreakNeeded * 60000);
-    checkOutTime = Timestamp.fromDate(extendedCheckOutDate);
-    
-    // Add a synthetic break for the additional time
-    record.breaks.push({
-      start: Timestamp.fromDate(originalCheckOutDate),
-      end: checkOutTime,
-    });
-  }
-
-  const workMinutes = calculateWorkMinutes(record.checkIn, checkOutTime, record.breaks);
+  // Calculate work minutes without breaks (breaks feature removed)
+  const workMinutes = calculateWorkMinutes(record.checkIn, checkOutTime, []);
 
   await updateDoc(attendanceDocRef, {
     checkOut: checkOutTime,
-    breaks: record.breaks,
     ...workMinutes,
-  });
-}
-
-/**
- * Starts a break for a user within a specific branch.
- * @param branchId The ID of the branch.
- * @param userId The ID of the user starting a break.
- * @returns Promise<void>
- * @throws Will throw an error if the user is not clocked in or is already on a break.
- */
-export async function startBreak(branchId: string, userId: string): Promise<void> {
-  const openAttendanceId = await getOpenAttendanceRecordId(branchId, userId);
-
-  if (!openAttendanceId) {
-    throw new Error('User is not clocked in. Cannot start a break.');
-  }
-
-  const attendanceDocRef = doc(db, 'attendance', openAttendanceId);
-  const docSnap = await getDoc(attendanceDocRef);
-
-  if (!docSnap.exists()) {
-    throw new Error('Attendance record not found.');
-  }
-
-  const record = docSnap.data() as Attendance;
-  const openBreak = record.breaks.find(_break => _break.end === null);
-
-  if (openBreak) {
-    throw new Error('User is already on a break.');
-  }
-
-  const newBreaks = [...record.breaks, { start: Timestamp.now(), end: null }];
-
-  await updateDoc(attendanceDocRef, {
-    breaks: newBreaks,
-  });
-}
-
-/**
- * Ends a break for a user within a specific branch.
- * @param branchId The ID of the branch.
- * @param userId The ID of the user ending a break.
- * @returns Promise<void>
- * @throws Will throw an error if the user is not clocked in or not on a break.
- */
-export async function endBreak(branchId: string, userId: string): Promise<void> {
-  const openAttendanceId = await getOpenAttendanceRecordId(branchId, userId);
-
-  if (!openAttendanceId) {
-    throw new Error('User is not clocked in. Cannot end a break.');
-  }
-
-  const attendanceDocRef = doc(db, 'attendance', openAttendanceId);
-  const docSnap = await getDoc(attendanceDocRef);
-
-  if (!docSnap.exists()) {
-    throw new Error('Attendance record not found.');
-  }
-
-  const record = docSnap.data() as Attendance;
-  const openBreakIndex = record.breaks.findIndex(_break => _break.end === null);
-
-  if (openBreakIndex === -1) {
-    throw new Error('User is not on a break.');
-  }
-
-  const updatedBreaks = [...record.breaks];
-  updatedBreaks[openBreakIndex].end = Timestamp.now();
-
-  await updateDoc(attendanceDocRef, {
-    breaks: updatedBreaks,
   });
 }
 
@@ -371,7 +248,7 @@ export async function updateAttendanceRecord(branchId: string, recordId: string,
 
     const newCheckIn = updatedFields.checkIn || currentRecord.checkIn;
     const newCheckOut = updatedFields.checkOut || currentRecord.checkOut;
-    const newBreaks = updatedFields.breaks || currentRecord.breaks;
+    const newBreaks = updatedFields.breaks || currentRecord.breaks || [];
 
     let workMinutes = {
       regularWorkMinutes: currentRecord.regularWorkMinutes,
@@ -382,9 +259,9 @@ export async function updateAttendanceRecord(branchId: string, recordId: string,
     if (updatedFields.checkIn || updatedFields.checkOut || updatedFields.breaks) {
       const calculatedCheckIn = newCheckIn instanceof Timestamp ? newCheckIn : Timestamp.fromDate(newCheckIn as Date);
       const calculatedCheckOut = newCheckOut instanceof Timestamp ? newCheckOut : (newCheckOut ? Timestamp.fromDate(newCheckOut as Date) : null);
-      const finalBreaks = [...newBreaks];
 
-      workMinutes = calculateWorkMinutes(calculatedCheckIn, calculatedCheckOut, finalBreaks);
+      // Calculate work minutes without breaks (breaks feature removed)
+      workMinutes = calculateWorkMinutes(calculatedCheckIn, calculatedCheckOut, []);
     }
 
     const afterUpdates = {
@@ -437,40 +314,10 @@ export async function addAttendanceRecord(branchId: string, newRecordData: {
   }
 
   const checkInTimestamp = Timestamp.fromDate(checkIn);
-  let checkOutTimestamp = checkOut ? Timestamp.fromDate(checkOut) : null;
-  const finalBreaks = [...breaks];
+  const checkOutTimestamp = checkOut ? Timestamp.fromDate(checkOut) : null;
 
-  // If checkout exists, ensure minimum breaks: 8h+ => 60m, 4h+ => 30m
-  if (checkOutTimestamp) {
-    // Calculate current break minutes
-    let totalBreakMinutes = 0;
-    finalBreaks.forEach(_break => {
-      if (_break.start && _break.end) {
-        totalBreakMinutes += Math.floor(((_break.end.toDate().getTime() - _break.start.toDate().getTime()) / 60000));
-      }
-    });
-
-    // Calculate total work time (elapsed time - break time)
-    const totalElapsedMinutes = Math.floor((checkOutTimestamp.toDate().getTime() - checkInTimestamp.toDate().getTime()) / 60000);
-    const totalWorkMinutes = totalElapsedMinutes - totalBreakMinutes;
-
-    const requiredBreakMinutes = totalWorkMinutes >= 8 * 60 ? 60 : totalWorkMinutes >= 4 * 60 ? 30 : 0;
-    if (requiredBreakMinutes > totalBreakMinutes) {
-      // Extend checkout time to meet required break minutes
-      const additionalBreakNeeded = requiredBreakMinutes - totalBreakMinutes;
-      const originalCheckOutDate = checkOutTimestamp.toDate();
-      const extendedCheckOutDate = new Date(originalCheckOutDate.getTime() + additionalBreakNeeded * 60000);
-      checkOutTimestamp = Timestamp.fromDate(extendedCheckOutDate);
-      
-      // Add a synthetic break for the additional time
-      finalBreaks.push({
-        start: Timestamp.fromDate(originalCheckOutDate),
-        end: checkOutTimestamp,
-      });
-    }
-  }
-
-  const workMinutes = calculateWorkMinutes(checkInTimestamp, checkOutTimestamp, finalBreaks);
+  // Calculate work minutes without breaks (breaks feature removed)
+  const workMinutes = calculateWorkMinutes(checkInTimestamp, checkOutTimestamp, []);
 
   try {
     const attendanceCol = collection(db, 'attendance');
@@ -481,7 +328,6 @@ export async function addAttendanceRecord(branchId: string, newRecordData: {
       date,
       checkIn: checkInTimestamp,
       checkOut: checkOutTimestamp,
-      breaks: finalBreaks,
       isModified: true,
       ...workMinutes,
     });
@@ -496,7 +342,6 @@ export async function addAttendanceRecord(branchId: string, newRecordData: {
         userId, userName, date,
         checkIn: checkInTimestamp,
         checkOut: checkOutTimestamp,
-        breaks: finalBreaks,
         isModified: true,
         ...workMinutes,
       }),
