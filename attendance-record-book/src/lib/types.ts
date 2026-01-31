@@ -25,7 +25,7 @@ export interface Attendance {
   date: string;           // 날짜 (YYYY-MM-DD)
   checkIn: Timestamp;     // 출근 시간
   checkOut: Timestamp | null; // 퇴근 시간
-  breaks: BreakRecord[];
+  breaks?: BreakRecord[]; // 휴식 기록 (기존 데이터 호환성을 위해 optional)
   isModified: boolean;
   regularWorkMinutes: number;
   nightWorkMinutes: number;
