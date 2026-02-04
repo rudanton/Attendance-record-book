@@ -4,7 +4,6 @@ import { useCallback,useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 
-import { differenceInMinutes } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 
 import TimeInput from '@/components/TimeInput';
@@ -53,14 +52,6 @@ const parseTimeToTimestamp = (timeStr: string, originalTimestamp: Timestamp | nu
   const date = originalTimestamp ? originalTimestamp.toDate() : new Date(recordDate);
   date.setHours(hours, minutes, 0, 0);
   return Timestamp.fromDate(date);
-};
-
-// Calculate total break minutes for convenience helpers
-const calcBreakMinutes = (breaks: Attendance['breaks'] = []): number => {
-  return breaks.reduce((sum, b) => {
-    if (!b.start || !b.end) return sum;
-    return sum + differenceInMinutes(b.end.toDate(), b.start.toDate());
-  }, 0);
 };
 
 export default function EmployeeDetailPage() {
@@ -135,7 +126,7 @@ export default function EmployeeDetailPage() {
 
   const handleEditClick = (record: Attendance) => {
     setEditingRecordId(record.id);
-    setEditingFormData({ checkIn: record.checkIn, checkOut: record.checkOut, breaks: record.breaks });
+    setEditingFormData({ checkIn: record.checkIn, checkOut: record.checkOut });
   };
 
   const handleCancelEdit = () => {
@@ -217,83 +208,6 @@ export default function EmployeeDetailPage() {
     }
   };
 
-  const handleBreakChange = (breakIndex: number, field: 'start' | 'end', value: string) => {
-    if (!editingRecordId) return;
-    const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
-    if (!currentRecord) return;
-
-    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []))];
-    if (!existingBreaks[breakIndex]) return;
-
-    // 입력 중에는 문자열 그대로 저장
-    existingBreaks[breakIndex] = {
-      ...existingBreaks[breakIndex],
-      [field]: value as any
-    };
-    setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
-  };
-  
-  const handleBreakBlur = (breakIndex: number, field: 'start' | 'end', value: string) => {
-    if (!editingRecordId) return;
-    const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
-    if (!currentRecord) return;
-
-    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []))];
-    if (!existingBreaks[breakIndex]) return;
-
-    const originalTimestamp = field === 'start' ? currentRecord.breaks?.[breakIndex]?.start : currentRecord.breaks?.[breakIndex]?.end;
-    const newTimestamp = parseTimeToTimestamp(value, originalTimestamp || null, currentRecord.date);
-
-    if (newTimestamp) {
-      existingBreaks[breakIndex] = {
-        ...existingBreaks[breakIndex],
-        [field]: newTimestamp
-      };
-      setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
-    } else {
-      // 유효하지 않으면 원래 값으로 복구
-      if (originalTimestamp) {
-        existingBreaks[breakIndex] = {
-          ...existingBreaks[breakIndex],
-          [field]: originalTimestamp
-        };
-        setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
-      }
-    }
-  };
-
-  const handleAddBreak = () => {
-    if (!editingRecordId) return;
-    const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
-    if (!currentRecord) return;
-
-    const checkInTs = (editingFormData.checkIn as Timestamp) || currentRecord.checkIn;
-    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []))];
-    
-    // Create a new break starting 1 hour after check-in, 30 minutes duration
-    const defaultStart = new Date(checkInTs.toDate());
-    defaultStart.setHours(defaultStart.getHours() + 1);
-    const defaultEnd = new Date(defaultStart);
-    defaultEnd.setMinutes(defaultEnd.getMinutes() + 30);
-
-    existingBreaks.push({
-      start: Timestamp.fromDate(defaultStart),
-      end: Timestamp.fromDate(defaultEnd)
-    });
-
-    setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
-  };
-
-  const handleDeleteBreak = (breakIndex: number) => {
-    if (!editingRecordId) return;
-    const currentRecord = attendanceRecords.find(r => r.id === editingRecordId);
-    if (!currentRecord) return;
-
-    const existingBreaks = [...((editingFormData.breaks || currentRecord.breaks || []))];
-    existingBreaks.splice(breakIndex, 1);
-    setEditingFormData(prev => ({ ...prev, breaks: existingBreaks }));
-  };
-
   // Generate year options
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i); // Current year +/- 2
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -328,7 +242,6 @@ export default function EmployeeDetailPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">날짜</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">출근 시간</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">퇴근 시간</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-80">휴식 시간</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">총 근무 시간</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">작업</th>
               </tr>
@@ -373,61 +286,6 @@ export default function EmployeeDetailPage() {
                         record.checkOut ? new Date(record.checkOut.seconds * 1000).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '근무 중'
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-500 w-80">
-                      {editingRecordId === record.id ? (
-                        <div className="space-y-2">
-                          {((editingFormData.breaks || record.breaks || [])).map((b, index) => (
-                            <div key={index} className="flex items-center space-x-2 bg-gray-50 p-2 rounded">
-                              <TimeInput
-                                name={`break-start-${index}`}
-                                value={b.start}
-                                onChange={(e) => handleBreakChange(index, 'start', e.target.value)}
-                                onBlur={(e) => handleBreakBlur(index, 'start', e.target.value)}
-                                className="p-1 border rounded w-24 text-xs"
-                              />
-                              <span>-</span>
-                              <TimeInput
-                                name={`break-end-${index}`}
-                                value={b.end}
-                                onChange={(e) => handleBreakChange(index, 'end', e.target.value)}
-                                onBlur={(e) => handleBreakBlur(index, 'end', e.target.value)}
-                                className="p-1 border rounded w-24 text-xs"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteBreak(index)}
-                                className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded"
-                                title="이 휴게 시간 삭제"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={handleAddBreak}
-                            className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded"
-                          >
-                            + 휴게 추가
-                          </button>
-                        </div>
-                      ) : (
-                        record.breaks && record.breaks.length > 0 ? 
-                          record.breaks.map((b, index) => {
-                            const breakStartTime = new Date(b.start.seconds * 1000);
-                            const breakEndTime = b.end ? new Date(b.end.seconds * 1000) : null;
-                            const duration = breakEndTime ? differenceInMinutes(breakEndTime, breakStartTime) : null;
-                            
-                            return (
-                              <div key={index}>
-                                {breakStartTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} - {breakEndTime ? breakEndTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '진행중'}
-                                {duration !== null && duration > 0 && ` (${duration}분)`}
-                              </div>
-                            );
-                          })
-                        : '-'
-                      )}
-                    </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                       {record.totalWorkMinutes > 0 ? `${Math.floor(record.totalWorkMinutes / 60)}시간 ${record.totalWorkMinutes % 60}분` : '-'}
                     </td>
@@ -445,7 +303,7 @@ export default function EmployeeDetailPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">{MESSAGES.NO_RECORDS}</td>
+                  <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">{MESSAGES.NO_RECORDS}</td>
                 </tr>
               )}
             </tbody>
